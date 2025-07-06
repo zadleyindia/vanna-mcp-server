@@ -419,29 +419,35 @@ def _generate_suggestions(query: str, sql: str) -> list[str]:
     return suggestions[:4]
 
 async def _store_query_history(query: str, sql: str, execution_time_ms: float, confidence: float, tenant_id: str):
-    """Store query in history using vanna_embeddings table with special metadata"""
+    """Store query in history using direct database insert to avoid confusion with training data"""
     try:
-        vanna = get_vanna()
+        from supabase import create_client
         
-        # Store as a special type in vanna_embeddings
-        metadata = {
-            "type": "query_history",
-            "tenant_id": tenant_id,
-            "database_type": settings.DATABASE_TYPE,
-            "confidence_score": confidence,
-            "execution_time_ms": int(execution_time_ms),
-            "query": query,
-            "generated_sql": sql
+        # Create Supabase client
+        supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+        
+        # Store directly in vanna_embeddings but WITHOUT embedding
+        # This ensures it's separate from actual training data used for similarity search
+        history_record = {
+            "collection_id": None,  # No collection - this marks it as non-training data
+            "embedding": None,      # No embedding - won't interfere with similarity search  
+            "document": f"QUERY_HISTORY: {query}\nSQL: {sql}",
+            "cmetadata": {
+                "type": "query_history",
+                "tenant_id": tenant_id,
+                "database_type": settings.DATABASE_TYPE,
+                "confidence_score": confidence,
+                "execution_time_ms": int(execution_time_ms),
+                "question": query,
+                "generated_sql": sql,
+                "timestamp": "now()"
+            }
         }
         
-        # Store using Vanna's training system but mark as query history
+        # Insert directly to ensure it doesn't get used for training
         await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: vanna.train(
-                question=query,
-                sql=sql,
-                tag="query_history"  # Special tag to identify history entries
-            )
+            lambda: supabase.table("vanna_embeddings").insert(history_record).execute()
         )
         
         logger.debug(f"Stored query history: {query[:50]}... (confidence: {confidence})")
