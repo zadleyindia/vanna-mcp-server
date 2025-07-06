@@ -5,6 +5,7 @@ Production-ready MCP server for natural language to SQL conversion with enterpri
 
 ## Key Features
 - Natural language to SQL conversion using Vanna AI
+- Query history and analytics with performance tracking
 - Multi-tenant isolation with strict security boundaries  
 - Cross-database support (BigQuery, PostgreSQL, MySQL, MS SQL Server)
 - Shared knowledge base across tenants
@@ -16,7 +17,7 @@ Production-ready MCP server for natural language to SQL conversion with enterpri
 1. **MCP Server** (`server.py`) - FastMCP-based server handling client requests
 2. **Vanna Integration** (`src/config/production_vanna.py`) - Custom Vanna implementation with multi-tenant support
 3. **Vector Store** (`src/vanna_schema/pgvector_with_schema.py`) - PostgreSQL pgvector for similarity search
-4. **Tools** (`src/tools/`) - MCP tool implementations for ask, train, suggest, and tenant management
+4. **Tools** (`src/tools/`) - MCP tool implementations for ask, train, suggest, tenant management, and query history
 
 ### Multi-Tenant Implementation
 - Metadata-based filtering using PostgreSQL JSONB
@@ -80,7 +81,8 @@ python scripts/setup_database.py
 
 ## Database Structure
 - Using configurable schema via `VANNA_SCHEMA` setting (defaults to "public")
-- Tables: `{schema}.vanna_collections`, `{schema}.vanna_embeddings`
+- Tables: `{schema}.vanna_collections`, `{schema}.vanna_embeddings`, `{schema}.query_history`
+- Query history table tracks all SQL generations with analytics
 - Metadata stored as JSONB for efficient filtering
 - Supports 1536-dimensional OpenAI embeddings
 - Our fork enables custom schema support (unlike original Vanna)

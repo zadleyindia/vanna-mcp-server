@@ -5,6 +5,7 @@ A production-ready Model Context Protocol (MCP) server that provides natural lan
 ## 🚀 Features
 
 - **Natural Language to SQL**: Convert plain English questions to optimized SQL queries
+- **Query History & Analytics**: Track all SQL queries with performance metrics and confidence scores
 - **Multi-Tenant Isolation**: Enterprise-grade tenant isolation with strict security boundaries
 - **Multi-Database Support**: Works with BigQuery, PostgreSQL, MySQL, and MS SQL Server
 - **Shared Knowledge Base**: Share common business logic across tenants while maintaining data isolation
@@ -162,6 +163,43 @@ suggestions = vanna_suggest_questions(
 ```python
 tenants = vanna_list_tenants()
 # Returns allowed tenants and configuration
+```
+
+#### 5. `vanna_get_query_history` - View Query History & Analytics
+```python
+# Get recent queries with analytics
+history = vanna_get_query_history(
+    tenant_id="tenant_abc",  # Optional: filter by tenant
+    limit=10,                # Number of queries to return
+    include_analytics=True   # Include performance analytics
+)
+
+# Returns:
+# {
+#   "queries": [
+#     {
+#       "id": "uuid",
+#       "question": "Show me total sales for this month",
+#       "sql": "SELECT SUM(sales) FROM...",
+#       "confidence_score": 0.85,
+#       "execution_time_ms": 1250,
+#       "tenant_id": "tenant_abc",
+#       "database_type": "bigquery",
+#       "created_at": "2025-07-06T11:27:24Z"
+#     }
+#   ],
+#   "analytics": {
+#     "total_queries": 50,
+#     "average_execution_time_ms": 1200,
+#     "average_confidence_score": 0.82,
+#     "queries_by_confidence": {
+#       "high_confidence": 35,
+#       "medium_confidence": 12,
+#       "low_confidence": 3
+#     },
+#     "success_rate": 0.96
+#   }
+# }
 ```
 
 ## 🏢 Multi-Tenant Configuration

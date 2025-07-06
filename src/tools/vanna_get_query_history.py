@@ -26,16 +26,15 @@ async def vanna_get_query_history(
         Query history with optional analytics
     """
     try:
-        vanna = get_vanna()
-        
         # Determine effective tenant
         effective_tenant = tenant_id or settings.TENANT_ID
         
         logger.info(f"Retrieving query history for tenant '{effective_tenant}', limit {limit}")
         
         # Query dedicated query_history table using existing Vanna connection
-        from src.config.vanna_config import get_vanna
+        logger.debug("About to call get_vanna()")
         vanna_instance = get_vanna()
+        logger.debug("Successfully got vanna instance")
         
         result_data = await asyncio.get_event_loop().run_in_executor(
             None,
@@ -110,11 +109,11 @@ async def vanna_get_query_history(
 
 def _get_query_history_sync(vanna_instance, effective_tenant: str, limit: int):
     """Synchronous version for executor - uses existing Vanna connection"""
-    import psycopg2.extras
+    from psycopg2.extras import RealDictCursor
     
     # Use the same connection method as the core Vanna tables
     with vanna_instance._get_connection() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Use configurable schema for table name (same as other Vanna tables)
             schema = settings.VANNA_SCHEMA
             
