@@ -422,7 +422,7 @@ def _create_query_history_table():
     """Auto-create query_history table if it doesn't exist"""
     try:
         import psycopg2
-        from urllib.parse import urlparse
+        from urllib.parse import urlparse, unquote_plus
         
         # Get connection string
         conn_str = settings.get_supabase_connection_string()
@@ -430,13 +430,15 @@ def _create_query_history_table():
         # Parse connection string to get components
         parsed = urlparse(conn_str)
         
-        # Create direct PostgreSQL connection
+        # Create direct PostgreSQL connection with URL-decoded password
+        decoded_password = unquote_plus(parsed.password) if parsed.password else None
+        
         conn = psycopg2.connect(
             host=parsed.hostname,
             port=parsed.port,
             database=parsed.path[1:] if parsed.path else 'postgres',
             user=parsed.username,
-            password=parsed.password
+            password=decoded_password
         )
         
         cursor = conn.cursor()

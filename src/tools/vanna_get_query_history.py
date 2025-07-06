@@ -128,7 +128,7 @@ def _get_query_history_sync(effective_tenant: str, limit: int):
         password=decoded_password
     )
     
-    cursor = conn.cursor(psycopg2.extras.RealDictCursor)
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
     # Use configurable schema for table name
     schema = settings.VANNA_SCHEMA
