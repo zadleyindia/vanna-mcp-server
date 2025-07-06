@@ -279,8 +279,9 @@ async def vanna_ask(
         # Log successful generation
         logger.info(f"Successfully generated SQL in {execution_time_ms:.2f}ms with confidence {confidence}")
         
-        # Store in query history for potential training
-        await _store_query_history(query, sql, execution_time_ms, confidence, effective_tenant)
+        # Store in query history for analytics using simplified storage
+        from src.tools.simple_storage import store_query_history
+        await store_query_history(query, sql, execution_time_ms, confidence, effective_tenant)
         
         return response
         

@@ -93,6 +93,24 @@ class SchemaAwarePGVectorStore(VannaBase):
                     )
                 """)
                 
+                # Create query history table for analytics (separate from training data)
+                cur.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {self.schema_name}.query_history (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        question TEXT NOT NULL,
+                        generated_sql TEXT NOT NULL,
+                        execution_time_ms INTEGER,
+                        confidence_score NUMERIC(3,2),
+                        tenant_id VARCHAR(255),
+                        database_type VARCHAR(50),
+                        executed BOOLEAN DEFAULT false,
+                        row_count INTEGER,
+                        error_message TEXT,
+                        user_feedback VARCHAR(20),
+                        created_at TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                
                 # Create indexes
                 cur.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_{self.schema_name}_embedding_collection 
@@ -102,6 +120,22 @@ class SchemaAwarePGVectorStore(VannaBase):
                 cur.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_{self.schema_name}_embedding_metadata 
                     ON {self.schema_name}.vanna_embeddings USING GIN (cmetadata)
+                """)
+                
+                # Query history indexes
+                cur.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{self.schema_name}_query_history_created 
+                    ON {self.schema_name}.query_history(created_at DESC)
+                """)
+                
+                cur.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{self.schema_name}_query_history_tenant 
+                    ON {self.schema_name}.query_history(tenant_id)
+                """)
+                
+                cur.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{self.schema_name}_query_history_confidence 
+                    ON {self.schema_name}.query_history(confidence_score DESC)
                 """)
                 
                 conn.commit()

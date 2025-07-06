@@ -33,11 +33,14 @@ async def vanna_get_query_history(
         
         logger.info(f"Retrieving query history for tenant '{effective_tenant}', limit {limit}")
         
-        # Query dedicated query_history table using direct PostgreSQL connection
+        # Query dedicated query_history table using existing Vanna connection
+        from src.config.vanna_config import get_vanna
+        vanna_instance = get_vanna()
+        
         result_data = await asyncio.get_event_loop().run_in_executor(
             None,
             _get_query_history_sync,
-            effective_tenant, limit
+            vanna_instance, effective_tenant, limit
         )
         
         queries = []
@@ -105,57 +108,36 @@ async def vanna_get_query_history(
             "queries": []
         }
 
-def _get_query_history_sync(effective_tenant: str, limit: int):
-    """Synchronous version for executor"""
-    import psycopg2
+def _get_query_history_sync(vanna_instance, effective_tenant: str, limit: int):
+    """Synchronous version for executor - uses existing Vanna connection"""
     import psycopg2.extras
-    from urllib.parse import urlparse
     
-    # Get connection string and parse it
-    conn_str = settings.get_supabase_connection_string()
-    parsed = urlparse(conn_str)
-    
-    # Create direct PostgreSQL connection
-    # Note: need to URL-decode the password
-    from urllib.parse import unquote_plus
-    decoded_password = unquote_plus(parsed.password) if parsed.password else None
-    
-    conn = psycopg2.connect(
-        host=parsed.hostname,
-        port=parsed.port,
-        database=parsed.path[1:] if parsed.path else 'postgres',
-        user=parsed.username,
-        password=decoded_password
-    )
-    
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    # Use configurable schema for table name
-    schema = settings.VANNA_SCHEMA
-    table_name = f"{schema}.query_history"
-    
-    # Build query with tenant filtering if enabled
-    if settings.ENABLE_MULTI_TENANT and effective_tenant:
-        query_sql = f"""
-        SELECT * FROM {table_name} 
-        WHERE tenant_id = %s 
-        ORDER BY created_at DESC 
-        LIMIT %s
-        """
-        cursor.execute(query_sql, (effective_tenant, limit))
-    else:
-        query_sql = f"""
-        SELECT * FROM {table_name} 
-        ORDER BY created_at DESC 
-        LIMIT %s
-        """
-        cursor.execute(query_sql, (limit,))
-    
-    # Fetch results
-    result_data = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    
+    # Use the same connection method as the core Vanna tables
+    with vanna_instance._get_connection() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # Use configurable schema for table name (same as other Vanna tables)
+            schema = settings.VANNA_SCHEMA
+            
+            # Build query with tenant filtering if enabled
+            if settings.ENABLE_MULTI_TENANT and effective_tenant:
+                query_sql = f"""
+                SELECT * FROM {schema}.query_history 
+                WHERE tenant_id = %s 
+                ORDER BY created_at DESC 
+                LIMIT %s
+                """
+                cur.execute(query_sql, (effective_tenant, limit))
+            else:
+                query_sql = f"""
+                SELECT * FROM {schema}.query_history 
+                ORDER BY created_at DESC 
+                LIMIT %s
+                """
+                cur.execute(query_sql, (limit,))
+            
+            # Fetch results
+            result_data = cur.fetchall()
+            
     return result_data
 
 # For FastMCP registration
