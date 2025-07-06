@@ -18,20 +18,24 @@
 
 ### Database Setup
 - ✅ Created database setup script
-- ✅ Defined schema with 3 core tables:
-  - `training_data` - For Vanna's training data with embeddings
-  - `query_history` - For tracking queries and learning
-  - `access_control` - For dataset whitelist/blacklist
+- ⚠️ Defined schema with 3 core tables (BUT NOT ACTUALLY USED):
+  - `training_data` - NOT USED (Vanna uses `vanna_embeddings` instead)
+  - `query_history` - NOT USED (only logs to console)
+  - `access_control` - PARTIALLY USED (data inserted but never queried)
+- ✅ Vanna creates its own tables in public schema:
+  - `vanna_collections` - Collection metadata
+  - `vanna_embeddings` - Training data with embeddings
 - ✅ Added proper indexes for vector search
-- ✅ Included triggers for updated_at timestamps
+- ✅ Multi-tenant support via JSONB metadata
 
 ### First MCP Tool Implementation
 - ✅ Implemented `vanna_ask` tool (Priority #1)
   - Natural language to SQL conversion
   - Configurable response (explanation, confidence)
-  - Query history tracking
+  - ⚠️ Query history tracking (logs only, no DB storage)
   - Suggestions for follow-up questions
   - Error handling and logging
+  - 🆕 Multi-tenant support with cross-tenant blocking
 
 ### Server Implementation
 - ✅ Created FastMCP server entry point

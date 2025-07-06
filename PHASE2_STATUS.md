@@ -36,21 +36,23 @@
 - ✅ Registered `vanna_suggest_questions` tool in server.py
 - ✅ Updated imports and type hints
 
-## 🚧 In Progress
+## 🚧 In Progress / Unclear Status
 
 ### Data Catalog Integration
-- The DDL extraction script is ready and integrates catalog metadata
+- The DDL extraction script exists and references `metadata_data_dictionary`
+- ⚠️ Unclear if BigQuery metadata integration actually works
 - Need to run `load_initial_training.py` to populate Vanna with data
 
 ## 📋 Phase 2 Checklist
 
 - [x] Implement `vanna_train` tool
 - [x] Create BigQuery DDL extraction script
-- [x] Integrate data catalog metadata into DDL
+- [⚠️] Integrate data catalog metadata into DDL (script exists but untested)
 - [x] Implement `vanna_suggest_questions` tool
 - [x] Update server.py with new tools
-- [ ] Run initial data load (requires user to execute)
-- [ ] Test all three implemented tools
+- [x] 🆕 Implement `vanna_list_tenants` tool (not in original plan)
+- [ ] Run initial data load (requires BigQuery setup)
+- [x] Test all implemented tools (done during multi-tenant testing)
 
 ## 🔧 Next Steps for User
 
@@ -104,10 +106,18 @@
 8. **vanna_remove_training** - Remove incorrect training
 9. **vanna_generate_followup** - Generate follow-up questions
 
+## 🆕 Additional Features Implemented (Not in Original Plan)
+
+- **Multi-tenant isolation** - Complete security implementation
+- **Cross-tenant blocking** - Pre-query validation
+- **Metadata-based filtering** - Using PostgreSQL JSONB
+- **`vanna_list_tenants` tool** - For tenant management
+- **Production-ready configuration** - No hardcoded credentials
+
 ## 📝 Notes
 
 - All tools follow the established pattern with comprehensive documentation
 - Validation is mandatory for SQL training
-- The system enforces the `vannabq` schema usage
-- Access control is respected throughout
-- Ready to proceed with Phase 3 (Query Execution & Visualization) once initial data is loaded
+- ⚠️ The system uses public schema, NOT `vannabq` as originally planned
+- Access control is via ALLOWED_TENANTS config, not database table
+- Ready to proceed with Phase 3 (Query Execution & Visualization)
