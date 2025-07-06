@@ -33,32 +33,18 @@ async def vanna_get_query_history(
         
         logger.info(f"Retrieving query history for tenant '{effective_tenant}', limit {limit}")
         
-        # Query dedicated query_history table using configurable schema
-        from supabase import create_client
-        supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
-        
-        # Use configurable schema for table name
-        schema = settings.VANNA_SCHEMA
-        table_name = f"{schema}.query_history" if schema != "public" else "query_history"
-        
-        # Build query
-        query_builder = supabase.table(table_name).select("*")
-        
-        # Apply tenant filtering if enabled
-        if settings.ENABLE_MULTI_TENANT and effective_tenant:
-            query_builder = query_builder.eq("tenant_id", effective_tenant)
-        
-        # Order by created_at (most recent first) and limit
-        result = await asyncio.get_event_loop().run_in_executor(
+        # Query dedicated query_history table using direct PostgreSQL connection
+        result_data = await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: query_builder.order("created_at", desc=True).limit(limit).execute()
+            _get_query_history_sync,
+            effective_tenant, limit
         )
         
         queries = []
         total_execution_time = 0
         confidence_scores = []
         
-        for row in result.data:
+        for row in result_data:
             query_info = {
                 "id": row["id"],
                 "question": row["question"][:100],
@@ -118,6 +104,55 @@ async def vanna_get_query_history(
             "message": "Failed to retrieve query history",
             "queries": []
         }
+
+def _get_query_history_sync(effective_tenant: str, limit: int):
+    """Synchronous version for executor"""
+    import psycopg2
+    import psycopg2.extras
+    from urllib.parse import urlparse
+    
+    # Get connection string and parse it
+    conn_str = settings.get_supabase_connection_string()
+    parsed = urlparse(conn_str)
+    
+    # Create direct PostgreSQL connection
+    conn = psycopg2.connect(
+        host=parsed.hostname,
+        port=parsed.port,
+        database=parsed.path[1:] if parsed.path else 'postgres',
+        user=parsed.username,
+        password=parsed.password
+    )
+    
+    cursor = conn.cursor(psycopg2.extras.RealDictCursor)
+    
+    # Use configurable schema for table name
+    schema = settings.VANNA_SCHEMA
+    table_name = f"{schema}.query_history"
+    
+    # Build query with tenant filtering if enabled
+    if settings.ENABLE_MULTI_TENANT and effective_tenant:
+        query_sql = f"""
+        SELECT * FROM {table_name} 
+        WHERE tenant_id = %s 
+        ORDER BY created_at DESC 
+        LIMIT %s
+        """
+        cursor.execute(query_sql, (effective_tenant, limit))
+    else:
+        query_sql = f"""
+        SELECT * FROM {table_name} 
+        ORDER BY created_at DESC 
+        LIMIT %s
+        """
+        cursor.execute(query_sql, (limit,))
+    
+    # Fetch results
+    result_data = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    
+    return result_data
 
 # For FastMCP registration
 tool_definition = {

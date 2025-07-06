@@ -418,42 +418,152 @@ def _generate_suggestions(query: str, sql: str) -> list[str]:
     # Limit to 3-4 suggestions
     return suggestions[:4]
 
-async def _store_query_history(query: str, sql: str, execution_time_ms: float, confidence: float, tenant_id: str):
-    """Store query in dedicated query_history table"""
+def _create_query_history_table():
+    """Auto-create query_history table if it doesn't exist"""
     try:
-        from supabase import create_client
+        import psycopg2
+        from urllib.parse import urlparse
         
-        # Create Supabase client
-        supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+        # Get connection string
+        conn_str = settings.get_supabase_connection_string()
         
-        # Store in dedicated query_history table using configurable schema
-        schema = settings.VANNA_SCHEMA
-        table_name = f"{schema}.query_history" if schema != "public" else "query_history"
+        # Parse connection string to get components
+        parsed = urlparse(conn_str)
         
-        history_record = {
-            "question": query,
-            "generated_sql": sql,
-            "execution_time_ms": int(execution_time_ms),
-            "confidence_score": round(confidence, 2),
-            "tenant_id": tenant_id,
-            "database_type": settings.DATABASE_TYPE,
-            "executed": False,  # Will be updated if/when query is executed
-            "row_count": None,
-            "error_message": None,
-            "user_feedback": None
-        }
-        
-        # Insert into dedicated query history table
-        await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: supabase.table(table_name).insert(history_record).execute()
+        # Create direct PostgreSQL connection
+        conn = psycopg2.connect(
+            host=parsed.hostname,
+            port=parsed.port,
+            database=parsed.path[1:] if parsed.path else 'postgres',
+            user=parsed.username,
+            password=parsed.password
         )
         
-        logger.debug(f"Stored query history in {table_name}: {query[:50]}... (confidence: {confidence})")
+        cursor = conn.cursor()
+        
+        # Use configurable schema
+        schema = settings.VANNA_SCHEMA
+        
+        # Create schema if it doesn't exist
+        cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        
+        # Create query_history table
+        create_table_sql = f"""
+        CREATE TABLE IF NOT EXISTS {schema}.query_history (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            question TEXT NOT NULL,
+            generated_sql TEXT NOT NULL,
+            execution_time_ms INTEGER,
+            confidence_score NUMERIC(3,2),
+            tenant_id VARCHAR(255),
+            database_type VARCHAR(50),
+            executed BOOLEAN DEFAULT false,
+            row_count INTEGER,
+            error_message TEXT,
+            user_feedback VARCHAR(20),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """
+        
+        cursor.execute(create_table_sql)
+        
+        # Create indexes
+        cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{schema.replace('.', '_')}_query_history_created ON {schema}.query_history(created_at DESC)")
+        cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{schema.replace('.', '_')}_query_history_tenant ON {schema}.query_history(tenant_id)")
+        cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{schema.replace('.', '_')}_query_history_confidence ON {schema}.query_history(confidence_score DESC)")
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Auto-created query_history table in schema '{schema}'")
+        
+    except Exception as e:
+        logger.error(f"Failed to auto-create query_history table: {e}")
+        raise
+
+async def _store_query_history(query: str, sql: str, execution_time_ms: float, confidence: float, tenant_id: str):
+    """Store query in dedicated query_history table using direct PostgreSQL connection"""
+    try:
+        # Run the database operation in executor to avoid blocking
+        await asyncio.get_event_loop().run_in_executor(
+            None,
+            _store_query_history_sync,
+            query, sql, execution_time_ms, confidence, tenant_id
+        )
+        
+        logger.debug(f"Stored query history: {query[:50]}... (confidence: {confidence})")
         
     except Exception as e:
         logger.warning(f"Failed to store query history: {e}")
         # Don't fail the main operation if history storage fails
+
+def _store_query_history_sync(query: str, sql: str, execution_time_ms: float, confidence: float, tenant_id: str):
+    """Synchronous version for executor"""
+    import psycopg2
+    import psycopg2.extras
+    from urllib.parse import urlparse
+    
+    # Get connection string and parse it
+    conn_str = settings.get_supabase_connection_string()
+    parsed = urlparse(conn_str)
+    
+    # Create direct PostgreSQL connection
+    conn = psycopg2.connect(
+        host=parsed.hostname,
+        port=parsed.port,
+        database=parsed.path[1:] if parsed.path else 'postgres',
+        user=parsed.username,
+        password=parsed.password
+    )
+    
+    cursor = conn.cursor()
+    
+    # Use configurable schema
+    schema = settings.VANNA_SCHEMA
+    table_name = f"{schema}.query_history"
+    
+    # Try to insert, auto-create table if needed
+    insert_sql = f"""
+    INSERT INTO {table_name} 
+    (question, generated_sql, execution_time_ms, confidence_score, tenant_id, database_type, executed, row_count, error_message, user_feedback)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    
+    try:
+        cursor.execute(insert_sql, (
+            query,
+            sql,
+            int(execution_time_ms),
+            round(confidence, 2),
+            tenant_id,
+            settings.DATABASE_TYPE,
+            False,  # executed
+            None,   # row_count
+            None,   # error_message
+            None    # user_feedback
+        ))
+        conn.commit()
+    except psycopg2.errors.UndefinedTable:
+        # Table doesn't exist, create it
+        _create_query_history_table()
+        # Retry the insert
+        cursor.execute(insert_sql, (
+            query,
+            sql,
+            int(execution_time_ms),
+            round(confidence, 2),
+            tenant_id,
+            settings.DATABASE_TYPE,
+            False,  # executed
+            None,   # row_count
+            None,   # error_message
+            None    # user_feedback
+        ))
+        conn.commit()
+    
+    cursor.close()
+    conn.close()
 
 # For FastMCP registration
 tool_definition = {
