@@ -509,12 +509,16 @@ def _store_query_history_sync(query: str, sql: str, execution_time_ms: float, co
     parsed = urlparse(conn_str)
     
     # Create direct PostgreSQL connection
+    # Note: need to URL-decode the password
+    from urllib.parse import unquote_plus
+    decoded_password = unquote_plus(parsed.password) if parsed.password else None
+    
     conn = psycopg2.connect(
         host=parsed.hostname,
         port=parsed.port,
         database=parsed.path[1:] if parsed.path else 'postgres',
         user=parsed.username,
-        password=parsed.password
+        password=decoded_password
     )
     
     cursor = conn.cursor()

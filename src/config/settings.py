@@ -105,8 +105,8 @@ class Settings:
         
         # Supabase PostgreSQL connection format
         # Using transaction pooler for better connection management
-        # Note: AWS pooler hostname format for Supabase (ap-south-1 region)
-        return f"postgresql://postgres.{project_ref}:{encoded_password}@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
+        # Note: For pooler, use 'postgres' as username, not 'postgres.project_ref'
+        return f"postgresql://postgres:{encoded_password}@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
     
     @classmethod
     def get_access_control_list(cls) -> list[str]:
