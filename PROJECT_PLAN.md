@@ -81,7 +81,10 @@ Build a Model Context Protocol (MCP) server that leverages Vanna AI to provide n
   - Store execution metadata
 
 ### 7. **Security & Access Control**
-- **Permissions**: Read-only access to all BigQuery datasets
+- **Multi-Tenant Security**: Strict tenant isolation with comprehensive validation
+- **Cross-Tenant Protection**: Pre-execution validation to prevent data leakage
+- **Database Type Validation**: Type-specific security and feature restrictions
+- **Tool Security Standards**: Mandatory security requirements for all tools
 - **Access Control**: Whitelist/blacklist configuration
   ```yaml
   access_control:
@@ -91,7 +94,8 @@ Build a Model Context Protocol (MCP) server that leverages Vanna AI to provide n
       # OR
       blacklist: ["sensitive_data", ...]
   ```
-- **Query Safety**: Start simple, no automatic restrictions
+- **Query Safety**: Comprehensive SQL validation and filtering
+- **Security Documentation**: [Tool Development Standards](docs/TOOL_DEVELOPMENT_STANDARDS.md)
 
 ### 8. **Performance & Scalability**
 - **Design Principle**: Build for unknown scale, monitor and adjust
@@ -211,16 +215,20 @@ CREATE TABLE vannabq.access_control (
 - [ ] Add access control configuration
 
 ### Phase 4: Management Tools (Week 7)
-- [ ] Implement `vanna_get_schemas`
-- [ ] Implement `vanna_get_training_data`
-- [ ] Implement `vanna_remove_training`
+⚠️ **CRITICAL: All Phase 4 tools MUST follow [Tool Development Standards](docs/TOOL_DEVELOPMENT_STANDARDS.md)**
+- [ ] Implement `vanna_get_schemas` (with security standards compliance)
+- [ ] Implement `vanna_get_training_data` (with security standards compliance)
+- [ ] Implement `vanna_remove_training` (with security standards compliance)
 - [ ] Create training data management workflow
+- [ ] Security audit for all Phase 4 tools
 
 ### Phase 5: Advanced Features & Polish (Week 8)
-- [ ] Implement `vanna_generate_followup`
+⚠️ **CRITICAL: All Phase 5 tools MUST follow [Tool Development Standards](docs/TOOL_DEVELOPMENT_STANDARDS.md)**
+- [ ] Implement `vanna_generate_followup` (with security standards compliance)
 - [ ] Performance optimization
-- [ ] Comprehensive testing
+- [ ] Comprehensive testing (including security compliance testing)
 - [ ] Documentation
+- [ ] Security audit for all tools
 - [ ] Deployment preparation
 
 ---

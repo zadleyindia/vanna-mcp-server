@@ -135,6 +135,10 @@ python scripts/setup_database.py
 - **Enhanced DDL Security**: Raw DDL commands blocked, only metadata extracted
 - **SQL Validation**: Comprehensive filtering of dangerous keywords and patterns
 - **Schema Metadata Extraction**: Normalized format prevents SQL injection
+- **Multi-Tenant Security**: Strict tenant isolation with cross-tenant access blocking
+- **Tool Security Standards**: All tools implement mandatory security requirements ([see standards](docs/TOOL_DEVELOPMENT_STANDARDS.md))
+- **Database Type Validation**: Type-specific security restrictions and feature validation
+- **Cross-Tenant Protection**: Pre-execution validation prevents data leakage
 - No hardcoded credentials in code
 - Environment-based configuration only
 - Tenant boundaries enforced at multiple layers
