@@ -20,6 +20,8 @@ from src.tools.vanna_train import vanna_train
 from src.tools.vanna_suggest_questions import vanna_suggest_questions
 from src.tools.vanna_list_tenants import vanna_list_tenants
 from src.tools.vanna_get_query_history import vanna_get_query_history
+from src.tools.vanna_explain import vanna_explain
+from src.tools.vanna_execute import vanna_execute
 
 # Configure logging
 logging.basicConfig(
@@ -164,11 +166,72 @@ async def handle_vanna_get_query_history(
         include_analytics=include_analytics
     )
 
-# TODO: Add other tools as we implement them
-# - vanna_explain
-# - vanna_execute
+# Register vanna_explain tool
+@mcp.tool(name="vanna_explain", description="Explain SQL queries in plain English with performance insights")
+async def handle_vanna_explain(
+    sql: str,
+    tenant_id: Optional[str] = None,
+    include_performance_tips: bool = True,
+    include_table_info: bool = True,
+    detail_level: str = "medium"
+) -> Dict[str, Any]:
+    """
+    Explain an SQL query in plain English.
+    
+    Args:
+        sql: The SQL query to explain
+        tenant_id: Tenant ID for multi-tenant mode (optional)
+        include_performance_tips: Include performance optimization suggestions
+        include_table_info: Include information about tables used
+        detail_level: Level of explanation detail ('basic', 'medium', 'detailed')
+    """
+    return await vanna_explain(
+        sql=sql,
+        tenant_id=tenant_id,
+        include_performance_tips=include_performance_tips,
+        include_table_info=include_table_info,
+        detail_level=detail_level
+    )
+
+# Register vanna_execute tool
+@mcp.tool(name="vanna_execute", description="Execute SQL queries with result formatting and visualization options")
+async def handle_vanna_execute(
+    sql: str,
+    tenant_id: Optional[str] = None,
+    response_format: str = "full",
+    limit: Optional[int] = None,
+    include_metadata: bool = True,
+    create_visualization: bool = False,
+    chart_type: str = "auto",
+    export_format: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Execute SQL queries and return formatted results.
+    
+    Args:
+        sql: The SQL query to execute (SELECT only)
+        tenant_id: Tenant ID for multi-tenant mode (optional)
+        response_format: Format for response data ('full', 'data_only', 'summary')
+        limit: Maximum number of rows to return
+        include_metadata: Include execution metadata
+        create_visualization: Generate chart visualization
+        chart_type: Type of chart to create ('auto', 'bar', 'line', 'scatter', 'pie', 'table')
+        export_format: Export data format ('csv', 'json', 'excel')
+    """
+    return await vanna_execute(
+        sql=sql,
+        tenant_id=tenant_id,
+        response_format=response_format,
+        limit=limit,
+        include_metadata=include_metadata,
+        create_visualization=create_visualization,
+        chart_type=chart_type,
+        export_format=export_format
+    )
+
+# TODO: Add remaining tools as we implement them
 # - vanna_get_schemas
-# - vanna_remove_training
+# - vanna_remove_training  
 # - vanna_generate_followup
 
 async def initialize_server():

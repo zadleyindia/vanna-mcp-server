@@ -17,7 +17,14 @@ Production-ready MCP server for natural language to SQL conversion with enterpri
 1. **MCP Server** (`server.py`) - FastMCP-based server handling client requests
 2. **Vanna Integration** (`src/config/production_vanna.py`) - Custom Vanna implementation with multi-tenant support
 3. **Vector Store** (`src/vanna_schema/pgvector_with_schema.py`) - PostgreSQL pgvector for similarity search
-4. **Tools** (`src/tools/`) - MCP tool implementations for ask, train, suggest, tenant management, and query history
+4. **Tools** (`src/tools/`) - Complete MCP tool suite:
+   - `vanna_ask` - Natural language to SQL conversion
+   - `vanna_train` - Add training data with security validation
+   - `vanna_suggest_questions` - Generate suggested queries
+   - `vanna_list_tenants` - Multi-tenant management
+   - `vanna_get_query_history` - Query analytics and history
+   - `vanna_explain` - SQL explanation in plain English
+   - `vanna_execute` - SQL execution with visualization and export
 
 ### Multi-Tenant Implementation
 - Metadata-based filtering using PostgreSQL JSONB
@@ -36,6 +43,8 @@ Production-ready MCP server for natural language to SQL conversion with enterpri
 - **Query History Implementation**: Added full query analytics with multi-tenant isolation
 - **Security Enhancement**: Implemented comprehensive DDL validation and metadata extraction
 - **BigQuery DDL Testing**: Successfully tested with 3 e-commerce tables
+- **Phase 3 Extended Features**: Completed vanna_explain and vanna_execute tools
+- **Export Functionality**: Added CSV/JSON/Excel export with comprehensive data formatting
 
 ## Testing Status
 ✅ Multi-tenant isolation: 100% working
@@ -45,6 +54,8 @@ Production-ready MCP server for natural language to SQL conversion with enterpri
 ✅ Query history: Full analytics with tenant isolation
 ✅ Security validation: DDL filtering and metadata extraction
 ✅ BigQuery features: STRUCT types, partitioning, clustering support
+✅ Phase 3 Extended Features: SQL explanation and execution tools
+✅ Export functionality: CSV/JSON/Excel with data formatting
 
 ## Configuration
 
