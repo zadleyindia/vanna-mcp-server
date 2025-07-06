@@ -118,6 +118,7 @@
 
 - All tools follow the established pattern with comprehensive documentation
 - Validation is mandatory for SQL training
-- ⚠️ The system uses public schema, NOT `vannabq` as originally planned
+- ✅ The system uses configurable schema via `VANNA_SCHEMA` setting (defaults to "public")
+- Our fork supports custom schemas, unlike original Vanna which was limited to public
 - Access control is via ALLOWED_TENANTS config, not database table
 - Ready to proceed with Phase 3 (Query Execution & Visualization)

@@ -51,8 +51,9 @@
    - Runtime uses ALLOWED_TENANTS config instead
 
 3. **Custom schema (`vannabq`)** - Created but not used
-   - Vanna uses public schema with its own tables
-   - `vanna_collections` and `vanna_embeddings` are the actual tables
+   - Vanna uses configurable schema via `settings.VANNA_SCHEMA` (defaults to "public")
+   - Tables: `{schema}.vanna_collections` and `{schema}.vanna_embeddings`
+   - Our fork supports custom schemas, unlike original Vanna
 
 #### Remaining MCP Tools (5 of 9)
 5. **`vanna_explain`** ❌ - Explain SQL in plain English
@@ -81,9 +82,10 @@
                                                   │    Supabase     │
                                                   │  (PostgreSQL)   │
                                                   │                 │
-                                                  │ public schema:  │
+                                                  │ {VANNA_SCHEMA}: │
                                                   │ - vanna_collections
                                                   │ - vanna_embeddings
+                                                  │ (configurable)  │
                                                   └─────────────────┘
 ```
 

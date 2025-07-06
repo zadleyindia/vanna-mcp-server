@@ -68,8 +68,8 @@ CREATE TABLE public.langchain_pg_embedding (
 ## Why This Happened
 
 1. **Vanna Integration**: Vanna comes with its own storage layer (pgvector via LangChain)
-2. **Hardcoded Schema**: LangChain's pgvector is hardcoded to use public schema
-3. **Design Evolution**: Original design had custom tables, but implementation used Vanna defaults
+2. **Schema Configuration**: Our fork supports configurable schemas via `VANNA_SCHEMA` setting
+3. **Design Evolution**: Original design had custom tables, but implementation used Vanna defaults with schema flexibility
 
 ## Current Architecture
 
@@ -89,9 +89,9 @@ CREATE TABLE public.langchain_pg_embedding (
 ┌─────────────────────────────────────┐
 │     PostgreSQL (Supabase)           │
 │                                     │
-│  public schema:                     │
-│  - langchain_pg_collection          │
-│  - langchain_pg_embedding           │
+│  {VANNA_SCHEMA} (configurable):     │
+│  - vanna_collections                │
+│  - vanna_embeddings                 │
 │    └── cmetadata (JSONB):           │
 │        - database_type              │
 │        - tenant_id                  │
@@ -101,9 +101,9 @@ CREATE TABLE public.langchain_pg_embedding (
 
 ## Recommendations
 
-1. **Drop vannabq schema** - It's not being used
-2. **Remove unused code** - Clean up references to custom tables
-3. **Document the decision** - Update README to reflect actual implementation
+1. **Keep schema flexibility** - Our fork supports configurable schemas via `VANNA_SCHEMA`
+2. **Use consistent schema** - Query history table should use same `VANNA_SCHEMA` setting
+3. **Update documentation** - Clarify that we're not limited to public schema like original Vanna
 
 ## Migration Script
 

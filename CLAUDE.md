@@ -79,10 +79,11 @@ python scripts/setup_database.py
 ```
 
 ## Database Structure
-- Using public schema (Vanna pgvector limitation)
-- Tables: `vanna_collections`, `vanna_embeddings`
+- Using configurable schema via `VANNA_SCHEMA` setting (defaults to "public")
+- Tables: `{schema}.vanna_collections`, `{schema}.vanna_embeddings`
 - Metadata stored as JSONB for efficient filtering
 - Supports 1536-dimensional OpenAI embeddings
+- Our fork enables custom schema support (unlike original Vanna)
 
 ## Important Implementation Details
 
