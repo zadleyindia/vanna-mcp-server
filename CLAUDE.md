@@ -33,12 +33,18 @@ Production-ready MCP server for natural language to SQL conversion with enterpri
 - Fixed training to use default tenant when not specified
 - Cleaned up project structure and removed obsolete files
 - Updated documentation to production standards
+- **Query History Implementation**: Added full query analytics with multi-tenant isolation
+- **Security Enhancement**: Implemented comprehensive DDL validation and metadata extraction
+- **BigQuery DDL Testing**: Successfully tested with 3 e-commerce tables
 
 ## Testing Status
 ✅ Multi-tenant isolation: 100% working
 ✅ Shared knowledge: Functioning correctly
 ✅ Cross-tenant blocking: Immediate with clear messages
 ✅ Training: All modes working with smart defaults
+✅ Query history: Full analytics with tenant isolation
+✅ Security validation: DDL filtering and metadata extraction
+✅ BigQuery features: STRUCT types, partitioning, clustering support
 
 ## Configuration
 
@@ -102,12 +108,22 @@ python scripts/setup_database.py
 - Supports both legacy data (without tenant_id) and strict filtering
 
 ### Training Data
-- DDL: Table definitions (CREATE TABLE statements)
-- Documentation: Business rules and context
-- SQL: Question-answer pairs for learning patterns
-- Shared knowledge: Available to all tenants with `is_shared=True`
+- **DDL**: Table definitions with enhanced security validation
+  - Raw CREATE TABLE statements are processed and filtered
+  - Only normalized schema metadata is stored (no executable DDL)
+  - Dangerous keywords (DROP, DELETE, ALTER, etc.) are blocked
+  - Schema information extracted: table names, columns, data types, partitioning
+- **Documentation**: Business rules and context
+- **SQL**: Question-answer pairs with comprehensive validation
+  - Only SELECT statements allowed for training
+  - Dangerous patterns blocked (system functions, stored procedures)
+  - Optional dry-run validation for syntax checking
+- **Shared knowledge**: Available to all tenants with `is_shared=True`
 
 ## Security Considerations
+- **Enhanced DDL Security**: Raw DDL commands blocked, only metadata extracted
+- **SQL Validation**: Comprehensive filtering of dangerous keywords and patterns
+- **Schema Metadata Extraction**: Normalized format prevents SQL injection
 - No hardcoded credentials in code
 - Environment-based configuration only
 - Tenant boundaries enforced at multiple layers

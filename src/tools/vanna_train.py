@@ -151,8 +151,15 @@ async def vanna_train(
         enhanced_metadata['training_type'] = training_type
         
         if training_type == 'ddl':
+            # Extract schema metadata for secure training
+            schema_info = validation_results.get('schema_metadata', {})
+            
+            # Create normalized schema documentation instead of raw DDL
+            normalized_content = _create_normalized_schema_doc(schema_info, content)
+            
+            # Store as documentation rather than raw DDL for security
             success = vn.train(
-                ddl=content,
+                documentation=normalized_content,
                 tenant_id=tenant_id,
                 is_shared=is_shared,
                 metadata=enhanced_metadata
@@ -260,14 +267,38 @@ async def _validate_sql_training(sql: str, question: str) -> Dict[str, Any]:
                 "suggestions": ["Ensure your SQL starts with SELECT", "Remove any INSERT/UPDATE/DELETE statements"]
             }
         
-        # Check for dangerous keywords
-        dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE']
+        # Check for dangerous keywords (comprehensive list)
+        dangerous_keywords = [
+            'DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE',
+            'GRANT', 'REVOKE', 'CREATE', 'MERGE', 'EXECUTE', 'CALL',
+            'REPLACE', 'UPSERT', 'COPY', 'LOAD', 'IMPORT', 'EXPORT'
+        ]
         for keyword in dangerous_keywords:
             if keyword in sql_upper:
                 return {
                     "valid": False,
                     "error": f"SQL contains forbidden keyword: {keyword}",
                     "suggestions": ["Use only SELECT statements", "Remove any data modification commands"]
+                }
+        
+        # Check for dangerous functions/patterns
+        dangerous_patterns = [
+            r'EXEC\s*\(',  # EXEC() function calls
+            r'EXECUTE\s*\(',  # EXECUTE() function calls
+            r'CALL\s+\w+',  # Stored procedure calls
+            r'@@\w+',  # System variables
+            r'INFORMATION_SCHEMA\.',  # Information schema access
+            r'SHOW\s+',  # SHOW commands
+            r'DESC\s+',  # DESCRIBE commands
+            r'DESCRIBE\s+',  # DESCRIBE commands
+        ]
+        
+        for pattern in dangerous_patterns:
+            if re.search(pattern, sql_upper, re.IGNORECASE):
+                return {
+                    "valid": False,
+                    "error": f"SQL contains forbidden pattern: {pattern}",
+                    "suggestions": ["Use only basic SELECT statements", "Remove system functions and commands"]
                 }
         
         # Dry run with LIMIT 1 if configured
@@ -317,7 +348,7 @@ async def _validate_sql_training(sql: str, question: str) -> Dict[str, Any]:
         }
 
 def _validate_ddl_training(ddl: str) -> Dict[str, Any]:
-    """Validate DDL format"""
+    """Validate DDL format and extract only schema metadata"""
     ddl_upper = ddl.strip().upper()
     
     if not ddl_upper.startswith('CREATE TABLE'):
@@ -335,7 +366,177 @@ def _validate_ddl_training(ddl: str) -> Dict[str, Any]:
             "suggestions": ["Format: CREATE TABLE table_name (column definitions)"]
         }
     
-    return {"valid": True}
+    # Security check: Block dangerous DDL commands
+    dangerous_ddl_keywords = [
+        'DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE', 
+        'GRANT', 'REVOKE', 'EXECUTE', 'CALL', 'MERGE'
+    ]
+    
+    # Allow CREATE TABLE but block other DDL commands
+    for keyword in dangerous_ddl_keywords:
+        if keyword in ddl_upper and keyword != 'CREATE':
+            return {
+                "valid": False,
+                "error": f"DDL contains forbidden keyword: {keyword}",
+                "suggestions": ["Use only CREATE TABLE statements for schema definition"]
+            }
+    
+    # Extract and validate schema metadata
+    try:
+        schema_info = _extract_schema_metadata(ddl)
+        if not schema_info:
+            return {
+                "valid": False,
+                "error": "Could not extract valid schema information",
+                "suggestions": ["Ensure proper CREATE TABLE syntax with column definitions"]
+            }
+        
+        return {
+            "valid": True,
+            "schema_metadata": schema_info,
+            "security_validated": True
+        }
+        
+    except Exception as e:
+        return {
+            "valid": False,
+            "error": f"Schema validation failed: {str(e)}",
+            "suggestions": ["Check DDL syntax and format"]
+        }
+
+def _extract_schema_metadata(ddl: str) -> Dict[str, Any]:
+    """Extract only schema metadata from DDL, filtering out dangerous commands"""
+    import re
+    
+    try:
+        # Extract table name (supports both backticks and regular names)
+        table_match = re.search(r'CREATE TABLE\s+(?:`([^`]+)`|(\w+(?:\.\w+)*(?:\.\w+)*))', ddl, re.IGNORECASE)
+        if not table_match:
+            return {}
+        
+        table_name = table_match.group(1) or table_match.group(2)
+        
+        # Extract column definitions (between first ( and last ))
+        column_match = re.search(r'\((.+)\)(?:\s*PARTITION|\s*CLUSTER|\s*OPTIONS|\s*$)', ddl, re.DOTALL | re.IGNORECASE)
+        if not column_match:
+            return {}
+        
+        columns_text = column_match.group(1)
+        
+        # Parse individual columns
+        columns = []
+        # Split by commas, but handle nested STRUCT types
+        column_parts = _smart_split_columns(columns_text)
+        
+        for col_def in column_parts:
+            col_def = col_def.strip()
+            if not col_def:
+                continue
+                
+            # Extract column name and type
+            col_match = re.match(r'(\w+)\s+(.+?)(?:\s+(?:NOT\s+NULL|DEFAULT\s+.+|PRIMARY\s+KEY).*)?$', col_def, re.IGNORECASE)
+            if col_match:
+                col_name = col_match.group(1)
+                col_type = col_match.group(2).strip()
+                
+                # Clean up type (remove constraints)
+                col_type = re.sub(r'\s+(?:NOT\s+NULL|DEFAULT\s+.+|PRIMARY\s+KEY).*', '', col_type, flags=re.IGNORECASE)
+                
+                columns.append({
+                    "name": col_name,
+                    "type": col_type,
+                    "nullable": "NOT NULL" not in col_def.upper()
+                })
+        
+        # Extract partitioning info
+        partition_match = re.search(r'PARTITION BY\s+(.+?)(?:\s*CLUSTER|\s*OPTIONS|\s*$)', ddl, re.IGNORECASE)
+        partition_info = partition_match.group(1).strip() if partition_match else None
+        
+        # Extract clustering info
+        cluster_match = re.search(r'CLUSTER BY\s+(.+?)(?:\s*OPTIONS|\s*$)', ddl, re.IGNORECASE)
+        cluster_info = cluster_match.group(1).strip() if cluster_match else None
+        
+        # Return normalized schema metadata (no executable DDL)
+        return {
+            "table_name": table_name,
+            "columns": columns,
+            "partition_by": partition_info,
+            "cluster_by": cluster_info,
+            "column_count": len(columns),
+            "has_structs": any("STRUCT" in col["type"].upper() for col in columns),
+            "has_partitioning": bool(partition_info),
+            "has_clustering": bool(cluster_info)
+        }
+        
+    except Exception as e:
+        logger.warning(f"Failed to extract schema metadata: {e}")
+        return {}
+
+def _smart_split_columns(columns_text: str) -> list:
+    """Split column definitions by commas, handling nested STRUCT types"""
+    parts = []
+    current_part = ""
+    paren_depth = 0
+    angle_depth = 0
+    
+    for char in columns_text:
+        if char == '(':
+            paren_depth += 1
+        elif char == ')':
+            paren_depth -= 1
+        elif char == '<':
+            angle_depth += 1
+        elif char == '>':
+            angle_depth -= 1
+        elif char == ',' and paren_depth == 0 and angle_depth == 0:
+            parts.append(current_part.strip())
+            current_part = ""
+            continue
+            
+        current_part += char
+    
+    if current_part.strip():
+        parts.append(current_part.strip())
+    
+    return parts
+
+def _create_normalized_schema_doc(schema_info: Dict[str, Any], original_ddl: str) -> str:
+    """Create normalized schema documentation from metadata (no executable DDL)"""
+    if not schema_info:
+        return f"Table schema information extracted from DDL"
+    
+    table_name = schema_info.get('table_name', 'unknown_table')
+    columns = schema_info.get('columns', [])
+    
+    # Create safe documentation format
+    doc_parts = [
+        f"Table: {table_name}",
+        f"Columns ({len(columns)}):"
+    ]
+    
+    # Add column information
+    for col in columns:
+        col_info = f"- {col['name']}: {col['type']}"
+        if not col.get('nullable', True):
+            col_info += " (NOT NULL)"
+        doc_parts.append(col_info)
+    
+    # Add partitioning info if present
+    if schema_info.get('partition_by'):
+        doc_parts.append(f"Partitioned by: {schema_info['partition_by']}")
+    
+    # Add clustering info if present
+    if schema_info.get('cluster_by'):
+        doc_parts.append(f"Clustered by: {schema_info['cluster_by']}")
+    
+    # Add structural metadata
+    if schema_info.get('has_structs'):
+        doc_parts.append("Contains STRUCT data types")
+    
+    # Add a note about the original table structure
+    doc_parts.append(f"This table contains {schema_info.get('column_count', 0)} columns")
+    
+    return "\n".join(doc_parts)
 
 def _validate_documentation_training(doc: str) -> Dict[str, Any]:
     """Validate documentation"""
