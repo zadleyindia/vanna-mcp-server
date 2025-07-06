@@ -5,6 +5,7 @@ Priority #1 tool in our implementation
 from typing import Dict, Any, Optional
 import logging
 import time
+import asyncio
 from src.config.vanna_config import get_vanna
 from src.config.settings import settings
 
@@ -279,7 +280,7 @@ async def vanna_ask(
         logger.info(f"Successfully generated SQL in {execution_time_ms:.2f}ms with confidence {confidence}")
         
         # Store in query history for potential training
-        _store_query_history(query, sql, execution_time_ms)
+        await _store_query_history(query, sql, execution_time_ms, confidence, effective_tenant)
         
         return response
         
@@ -417,12 +418,34 @@ def _generate_suggestions(query: str, sql: str) -> list[str]:
     # Limit to 3-4 suggestions
     return suggestions[:4]
 
-def _store_query_history(query: str, sql: str, execution_time_ms: float):
-    """Store query in history for potential future training"""
+async def _store_query_history(query: str, sql: str, execution_time_ms: float, confidence: float, tenant_id: str):
+    """Store query in history using vanna_embeddings table with special metadata"""
     try:
-        # This would store in the query_history table
-        # Implementation depends on how we want to handle async database operations
-        logger.debug(f"Stored query in history: {query[:50]}...")
+        vanna = get_vanna()
+        
+        # Store as a special type in vanna_embeddings
+        metadata = {
+            "type": "query_history",
+            "tenant_id": tenant_id,
+            "database_type": settings.DATABASE_TYPE,
+            "confidence_score": confidence,
+            "execution_time_ms": int(execution_time_ms),
+            "query": query,
+            "generated_sql": sql
+        }
+        
+        # Store using Vanna's training system but mark as query history
+        await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: vanna.train(
+                question=query,
+                sql=sql,
+                tag="query_history"  # Special tag to identify history entries
+            )
+        )
+        
+        logger.debug(f"Stored query history: {query[:50]}... (confidence: {confidence})")
+        
     except Exception as e:
         logger.warning(f"Failed to store query history: {e}")
         # Don't fail the main operation if history storage fails

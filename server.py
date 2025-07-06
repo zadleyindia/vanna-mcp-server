@@ -19,6 +19,7 @@ from src.tools.vanna_ask import vanna_ask
 from src.tools.vanna_train import vanna_train
 from src.tools.vanna_suggest_questions import vanna_suggest_questions
 from src.tools.vanna_list_tenants import vanna_list_tenants
+from src.tools.vanna_get_query_history import vanna_get_query_history
 
 # Configure logging
 logging.basicConfig(
@@ -142,11 +143,31 @@ async def handle_vanna_list_tenants() -> Dict[str, Any]:
     """
     return await vanna_list_tenants()
 
+# Register vanna_get_query_history tool
+@mcp.tool(name="vanna_get_query_history", description="View query history and analytics")
+async def handle_vanna_get_query_history(
+    tenant_id: Optional[str] = None,
+    limit: int = 10,
+    include_analytics: bool = True
+) -> Dict[str, Any]:
+    """
+    Get query history and analytics.
+    
+    Args:
+        tenant_id: Filter by specific tenant (optional)
+        limit: Number of recent queries to return
+        include_analytics: Include aggregate analytics
+    """
+    return await vanna_get_query_history(
+        tenant_id=tenant_id,
+        limit=limit,
+        include_analytics=include_analytics
+    )
+
 # TODO: Add other tools as we implement them
 # - vanna_explain
 # - vanna_execute
 # - vanna_get_schemas
-# - vanna_get_training_data
 # - vanna_remove_training
 # - vanna_generate_followup
 
