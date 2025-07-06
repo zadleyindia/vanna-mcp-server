@@ -164,6 +164,7 @@ tmp/
 # Credentials and secrets
 .env.local
 .env.*.local
+.env.test
 *_credentials.json
 *_secrets.json
 setup_claude_code_local.sh
