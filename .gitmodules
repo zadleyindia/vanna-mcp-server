@@ -1,0 +1,3 @@
+[submodule "vanna-fork"]
+	path = vanna-fork
+	url = https://github.com/zadleyindia/vanna.git

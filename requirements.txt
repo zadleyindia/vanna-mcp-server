@@ -1,0 +1,39 @@
+# Core dependencies
+fastmcp>=0.1.0
+git+https://github.com/zadleyindia/vanna.git@add-metadata-support
+python-dotenv>=1.0.0
+
+# Database
+psycopg2-binary>=2.9.0
+supabase>=2.0.0
+sqlalchemy>=2.0.0
+pgvector>=0.2.0
+
+# OpenAI
+openai>=1.0.0
+
+# BigQuery
+google-cloud-bigquery>=3.0.0
+google-cloud-bigquery-storage>=2.0.0
+db-dtypes>=1.0.0
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Visualization (for vanna_execute)
+plotly>=5.0.0
+kaleido>=0.2.0  # For static image export
+
+# Export functionality
+openpyxl>=3.0.0  # Excel export
+xlsxwriter>=3.0.0
+
+# Development
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+flake8>=6.0.0
+
+# Logging
+structlog>=23.0.0
