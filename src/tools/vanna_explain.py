@@ -107,11 +107,50 @@ async def vanna_explain(
         
         logger.info(f"Explaining SQL for tenant '{tenant_id}': {sql_clean[:100]}...")
         
+        # CRITICAL: Apply cross-tenant validation (same as vanna_ask)
+        if settings.ENABLE_MULTI_TENANT and (tenant_id or settings.TENANT_ID):
+            effective_tenant = tenant_id or settings.TENANT_ID
+            
+            # Import cross-tenant validation logic from vanna_ask
+            try:
+                from src.tools.vanna_ask import _extract_tables_from_sql, _check_cross_tenant_access
+                
+                tables_referenced = _extract_tables_from_sql(sql_clean)
+                logger.info(f"Tables referenced in SQL explanation: {tables_referenced}")
+                
+                # Check for cross-tenant violations
+                tenant_violations = _check_cross_tenant_access(tables_referenced, effective_tenant)
+                
+                if tenant_violations:
+                    if settings.STRICT_TENANT_ISOLATION:
+                        return {
+                            "success": False,
+                            "error": "Cross-tenant table access blocked in explanation",
+                            "blocked_tables": tenant_violations,
+                            "tenant_id": effective_tenant,
+                            "security_policy": "STRICT_TENANT_ISOLATION enabled",
+                            "suggestions": [
+                                f"Use tables accessible to tenant '{effective_tenant}'",
+                                "Contact administrator to access shared data"
+                            ]
+                        }
+                    else:
+                        # Permissive mode: warn but continue
+                        logger.warning(f"Cross-tenant access detected in SQL explanation for tenant '{effective_tenant}': {tenant_violations}")
+                        
+            except ImportError as e:
+                logger.warning(f"Could not import cross-tenant validation: {e}")
+        
         # Analyze query structure
         query_analysis = _analyze_sql_structure(sql_clean)
         
-        # Generate explanation using Vanna
-        explanation = await _generate_explanation(vn, sql_clean, detail_level, tenant_id)
+        # Database type validation and adaptation
+        database_type = settings.DATABASE_TYPE
+        if database_type and database_type.lower() not in sql_clean.lower():
+            logger.info(f"Explaining SQL for database type: {database_type}")
+        
+        # Generate explanation using Vanna with tenant context
+        explanation = await _generate_explanation(vn, sql_clean, detail_level, tenant_id, database_type)
         
         # Get table information if requested
         table_info = {}
@@ -138,7 +177,10 @@ async def vanna_explain(
             "complexity_score": complexity_score,
             "detail_level": detail_level,
             "tenant_id": tenant_id if settings.ENABLE_MULTI_TENANT else None,
-            "estimated_cost": estimated_cost
+            "estimated_cost": estimated_cost,
+            "database_type": database_type,
+            "shared_knowledge_enabled": settings.ENABLE_SHARED_KNOWLEDGE if settings.ENABLE_MULTI_TENANT else None,
+            "strict_isolation": settings.STRICT_TENANT_ISOLATION if settings.ENABLE_MULTI_TENANT else None
         }
         
         if include_table_info and table_info:
@@ -220,12 +262,14 @@ def _analyze_sql_structure(sql: str) -> Dict[str, Any]:
         "key_operations": key_operations
     }
 
-async def _generate_explanation(vn, sql: str, detail_level: str, tenant_id: Optional[str]) -> str:
+async def _generate_explanation(vn, sql: str, detail_level: str, tenant_id: Optional[str], database_type: Optional[str] = None) -> str:
     """Generate natural language explanation using Vanna's LLM"""
     try:
-        # Create explanation prompt based on detail level
+        # Create explanation prompt based on detail level and database type
+        db_context = f" (for {database_type.upper()})" if database_type else ""
+        
         if detail_level == "basic":
-            prompt = f"""Explain this SQL query in simple, non-technical terms that a business user can understand:
+            prompt = f"""Explain this SQL query{db_context} in simple, non-technical terms that a business user can understand:
 
 {sql}
 

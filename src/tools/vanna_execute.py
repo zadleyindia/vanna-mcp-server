@@ -163,6 +163,50 @@ async def vanna_execute(
         
         logger.info(f"Executing SQL for tenant '{tenant_id}': {sql_clean[:100]}...")
         
+        # CRITICAL: Apply cross-tenant validation before execution (same as vanna_ask)
+        if settings.ENABLE_MULTI_TENANT and (tenant_id or settings.TENANT_ID):
+            effective_tenant = tenant_id or settings.TENANT_ID
+            
+            # Import cross-tenant validation logic from vanna_ask
+            try:
+                from src.tools.vanna_ask import _extract_tables_from_sql, _check_cross_tenant_access
+                
+                tables_referenced = _extract_tables_from_sql(sql_clean)
+                logger.info(f"Tables referenced in SQL execution: {tables_referenced}")
+                
+                # Check for cross-tenant violations before execution
+                tenant_violations = _check_cross_tenant_access(tables_referenced, effective_tenant)
+                
+                if tenant_violations:
+                    if settings.STRICT_TENANT_ISOLATION:
+                        return {
+                            "success": False,
+                            "error": "Cross-tenant query execution blocked",
+                            "blocked_tables": tenant_violations,
+                            "tenant_id": effective_tenant,
+                            "security_policy": "STRICT_TENANT_ISOLATION enabled",
+                            "suggestions": [
+                                f"Use tables accessible to tenant '{effective_tenant}'",
+                                "Contact administrator to access shared data",
+                                "Check table permissions and tenant configuration"
+                            ]
+                        }
+                    else:
+                        # Permissive mode: warn but continue with reduced confidence
+                        logger.warning(f"Cross-tenant access detected in SQL execution for tenant '{effective_tenant}': {tenant_violations}")
+                        
+            except ImportError as e:
+                logger.warning(f"Could not import cross-tenant validation: {e}")
+        
+        # Database type validation
+        database_type = settings.DATABASE_TYPE
+        if database_type.lower() != "bigquery":
+            return {
+                "success": False,
+                "error": f"SQL execution only supported for BigQuery, current database: {database_type}",
+                "suggestions": ["Configure DATABASE_TYPE=bigquery for execution support"]
+            }
+        
         # Execute query
         start_time = datetime.now()
         execution_result = await _execute_query(sql_clean)
@@ -196,7 +240,9 @@ async def vanna_execute(
                 "columns": columns,
                 "tenant_id": tenant_id if settings.ENABLE_MULTI_TENANT else None,
                 "database": settings.DATABASE_TYPE,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "shared_knowledge_enabled": settings.ENABLE_SHARED_KNOWLEDGE if settings.ENABLE_MULTI_TENANT else None,
+                "strict_isolation": settings.STRICT_TENANT_ISOLATION if settings.ENABLE_MULTI_TENANT else None
             })
         
         # Handle different response formats
