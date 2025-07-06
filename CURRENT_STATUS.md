@@ -11,7 +11,7 @@
 - **Shared knowledge base** - Working across tenants
 - **MCP protocol integration** - Fully integrated with Claude Desktop
 
-#### MCP Tools Implemented (4 of 9 planned)
+#### MCP Tools Implemented (5 of 9 planned)
 1. **`vanna_ask`** ✅ - Convert natural language to SQL
    - Multi-tenant aware
    - Cross-tenant blocking
@@ -32,6 +32,11 @@
    - Configuration details
    - Usage examples
 
+5. **`vanna_get_query_history`** ✅ - View query history and analytics
+   - Dedicated table separate from training data
+   - Analytics: execution times, confidence distribution, success rates
+   - Multi-tenant filtering and performance metrics
+
 #### Security Features
 - **Tenant isolation** - 100% working with multiple validation layers
 - **Pre-query validation** - Blocks cross-tenant references
@@ -41,10 +46,11 @@
 
 ### ⚠️ Planned but Not Implemented
 
-#### Database Tables (exist but unused)
-1. **`query_history`** - Table exists but not being populated
-   - `_store_query_history()` only logs to console
-   - No actual database writes
+#### Database Tables (now properly implemented)
+1. **`query_history`** ✅ - Dedicated table for query analytics
+   - Separate from Vanna's training data to avoid confusion
+   - Stores: question, SQL, execution time, confidence, tenant_id, etc.
+   - Uses configurable `{VANNA_SCHEMA}.query_history` location
    
 2. **`access_control`** - Table exists but not queried
    - Data inserted during setup
@@ -55,13 +61,11 @@
    - Tables: `{schema}.vanna_collections` and `{schema}.vanna_embeddings`
    - Our fork supports custom schemas, unlike original Vanna
 
-#### Remaining MCP Tools (5 of 9)
-5. **`vanna_explain`** ❌ - Explain SQL in plain English
-6. **`vanna_execute`** ❌ - Execute SQL and return results
-7. **`vanna_get_schemas`** ❌ - Display database structure
-8. **`vanna_get_training_data`** ❌ - View existing training data
+#### Remaining MCP Tools (4 of 9)
+6. **`vanna_explain`** ❌ - Explain SQL in plain English
+7. **`vanna_execute`** ❌ - Execute SQL and return results  
+8. **`vanna_get_schemas`** ❌ - Display database structure
 9. **`vanna_remove_training`** ❌ - Remove incorrect training data
-10. **`vanna_generate_followup`** ❌ - Generate follow-up questions
 
 #### Other Missing Features
 - **CSV/Excel export** - Planned for vanna_execute
@@ -85,6 +89,7 @@
                                                   │ {VANNA_SCHEMA}: │
                                                   │ - vanna_collections
                                                   │ - vanna_embeddings
+                                                  │ - query_history │
                                                   │ (configurable)  │
                                                   └─────────────────┘
 ```

@@ -31,75 +31,39 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Set search path
 SET search_path TO {schema};
 
--- Drop existing tables if needed (be careful in production!)
--- DROP TABLE IF EXISTS {schema}.training_data CASCADE;
--- DROP TABLE IF EXISTS {schema}.query_history CASCADE;
--- DROP TABLE IF EXISTS {schema}.access_control CASCADE;
-
--- Training data table (Vanna's core)
-CREATE TABLE IF NOT EXISTS {schema}.training_data (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    training_data_type VARCHAR(50) NOT NULL, -- 'ddl', 'documentation', 'sql'
-    content TEXT NOT NULL,
-    embedding vector(1536),
-    metadata JSONB DEFAULT '{{}}',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Query history for learning
+-- Query history table for analytics (separate from Vanna's training data)
 CREATE TABLE IF NOT EXISTS {schema}.query_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     question TEXT NOT NULL,
     generated_sql TEXT NOT NULL,
-    executed BOOLEAN DEFAULT false,
     execution_time_ms INTEGER,
+    confidence_score NUMERIC(3,2), -- 0.00 to 1.00
+    tenant_id VARCHAR(255),
+    database_type VARCHAR(50),
+    executed BOOLEAN DEFAULT false,
     row_count INTEGER,
-    user_feedback VARCHAR(20), -- 'correct', 'incorrect'
     error_message TEXT,
+    user_feedback VARCHAR(20), -- 'correct', 'incorrect', 'helpful', etc.
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Access control configuration
-CREATE TABLE IF NOT EXISTS {schema}.access_control (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    control_type VARCHAR(20) NOT NULL, -- 'whitelist' or 'blacklist'
-    dataset_name VARCHAR(255) NOT NULL,
-    active BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(control_type, dataset_name)
-);
-
--- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_{schema}_training_embedding 
-    ON {schema}.training_data USING ivfflat (embedding vector_cosine_ops)
-    WHERE embedding IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_{schema}_training_type 
-    ON {schema}.training_data(training_data_type);
-
-CREATE INDEX IF NOT EXISTS idx_{schema}_query_history_created 
+-- Indexes for query history performance
+CREATE INDEX IF NOT EXISTS idx_{schema.replace('.', '_')}_query_history_created 
     ON {schema}.query_history(created_at DESC);
 
--- Create update trigger for updated_at
-CREATE OR REPLACE FUNCTION {schema}.update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
+CREATE INDEX IF NOT EXISTS idx_{schema.replace('.', '_')}_query_history_tenant 
+    ON {schema}.query_history(tenant_id);
 
-CREATE TRIGGER update_training_data_updated_at 
-    BEFORE UPDATE ON {schema}.training_data 
-    FOR EACH ROW 
-    EXECUTE FUNCTION {schema}.update_updated_at_column();
+CREATE INDEX IF NOT EXISTS idx_{schema.replace('.', '_')}_query_history_confidence 
+    ON {schema}.query_history(confidence_score DESC);
+
+-- Note: Vanna creates its own tables (vanna_collections, vanna_embeddings)
+-- This script only creates our additional query_history table
 
 -- Grant permissions (adjust as needed)
 GRANT ALL ON SCHEMA {schema} TO postgres;
 GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO postgres;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA {schema} TO postgres;
-GRANT ALL ON ALL FUNCTIONS IN SCHEMA {schema} TO postgres;
 """
 
 def initialize_access_control(supabase: Client):

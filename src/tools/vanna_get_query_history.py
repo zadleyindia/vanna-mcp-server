@@ -33,25 +33,25 @@ async def vanna_get_query_history(
         
         logger.info(f"Retrieving query history for tenant '{effective_tenant}', limit {limit}")
         
-        # Query vanna_embeddings for history entries (those with no embedding and type=query_history)
+        # Query dedicated query_history table using configurable schema
         from supabase import create_client
         supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
         
-        # Build query filters
-        query_builder = supabase.table("vanna_embeddings").select("*")
+        # Use configurable schema for table name
+        schema = settings.VANNA_SCHEMA
+        table_name = f"{schema}.query_history" if schema != "public" else "query_history"
         
-        # Filter for query history entries (no embedding, type=query_history)
-        query_builder = query_builder.is_("embedding", "null")
-        query_builder = query_builder.eq("cmetadata->>type", "query_history")
+        # Build query
+        query_builder = supabase.table(table_name).select("*")
         
         # Apply tenant filtering if enabled
         if settings.ENABLE_MULTI_TENANT and effective_tenant:
-            query_builder = query_builder.eq("cmetadata->>tenant_id", effective_tenant)
+            query_builder = query_builder.eq("tenant_id", effective_tenant)
         
-        # Order by ID (most recent first) and limit
+        # Order by created_at (most recent first) and limit
         result = await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: query_builder.order("id", desc=True).limit(limit).execute()
+            lambda: query_builder.order("created_at", desc=True).limit(limit).execute()
         )
         
         queries = []
@@ -59,25 +59,27 @@ async def vanna_get_query_history(
         confidence_scores = []
         
         for row in result.data:
-            metadata = row.get("cmetadata", {})
-            
             query_info = {
                 "id": row["id"],
-                "question": metadata.get("question", "")[:100],
-                "sql": metadata.get("generated_sql", "")[:200],
-                "confidence_score": metadata.get("confidence_score", 0),
-                "execution_time_ms": metadata.get("execution_time_ms", 0),
-                "tenant_id": metadata.get("tenant_id"),
-                "database_type": metadata.get("database_type"),
-                "timestamp": metadata.get("timestamp")
+                "question": row["question"][:100],
+                "sql": row["generated_sql"][:200],
+                "confidence_score": float(row.get("confidence_score", 0)),
+                "execution_time_ms": row.get("execution_time_ms", 0),
+                "tenant_id": row.get("tenant_id"),
+                "database_type": row.get("database_type"),
+                "executed": row.get("executed", False),
+                "row_count": row.get("row_count"),
+                "error_message": row.get("error_message"),
+                "user_feedback": row.get("user_feedback"),
+                "created_at": row.get("created_at")
             }
             
             queries.append(query_info)
             
-            if metadata.get("execution_time_ms"):
-                total_execution_time += metadata.get("execution_time_ms", 0)
-            if metadata.get("confidence_score"):
-                confidence_scores.append(metadata.get("confidence_score", 0))
+            if row.get("execution_time_ms"):
+                total_execution_time += row.get("execution_time_ms", 0)
+            if row.get("confidence_score"):
+                confidence_scores.append(float(row.get("confidence_score", 0)))
         
         response = {
             "queries": queries,
@@ -86,16 +88,23 @@ async def vanna_get_query_history(
         }
         
         if include_analytics and queries:
+            execution_times = [q["execution_time_ms"] for q in queries if q["execution_time_ms"]]
+            executed_queries = [q for q in queries if q["executed"]]
+            
             analytics = {
-                "average_execution_time_ms": total_execution_time / len(queries) if queries else 0,
+                "total_queries": len(queries),
+                "executed_queries": len(executed_queries),
+                "average_execution_time_ms": total_execution_time / len(execution_times) if execution_times else 0,
                 "average_confidence_score": sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0,
                 "queries_by_confidence": {
                     "high_confidence": len([s for s in confidence_scores if s >= 0.8]),
                     "medium_confidence": len([s for s in confidence_scores if 0.5 <= s < 0.8]),
                     "low_confidence": len([s for s in confidence_scores if s < 0.5])
                 },
-                "fastest_query_ms": min([metadata.get("execution_time_ms", 0) for metadata in [q for q in queries if q.get("execution_time_ms")]], default=0),
-                "slowest_query_ms": max([metadata.get("execution_time_ms", 0) for metadata in [q for q in queries if q.get("execution_time_ms")]], default=0)
+                "fastest_query_ms": min(execution_times) if execution_times else 0,
+                "slowest_query_ms": max(execution_times) if execution_times else 0,
+                "success_rate": len([q for q in queries if not q["error_message"]]) / len(queries) if queries else 0,
+                "database_types": list(set(q["database_type"] for q in queries if q["database_type"]))
             }
             response["analytics"] = analytics
         

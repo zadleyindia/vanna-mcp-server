@@ -419,38 +419,37 @@ def _generate_suggestions(query: str, sql: str) -> list[str]:
     return suggestions[:4]
 
 async def _store_query_history(query: str, sql: str, execution_time_ms: float, confidence: float, tenant_id: str):
-    """Store query in history using direct database insert to avoid confusion with training data"""
+    """Store query in dedicated query_history table"""
     try:
         from supabase import create_client
         
         # Create Supabase client
         supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
         
-        # Store directly in vanna_embeddings but WITHOUT embedding
-        # This ensures it's separate from actual training data used for similarity search
+        # Store in dedicated query_history table using configurable schema
+        schema = settings.VANNA_SCHEMA
+        table_name = f"{schema}.query_history" if schema != "public" else "query_history"
+        
         history_record = {
-            "collection_id": None,  # No collection - this marks it as non-training data
-            "embedding": None,      # No embedding - won't interfere with similarity search  
-            "document": f"QUERY_HISTORY: {query}\nSQL: {sql}",
-            "cmetadata": {
-                "type": "query_history",
-                "tenant_id": tenant_id,
-                "database_type": settings.DATABASE_TYPE,
-                "confidence_score": confidence,
-                "execution_time_ms": int(execution_time_ms),
-                "question": query,
-                "generated_sql": sql,
-                "timestamp": "now()"
-            }
+            "question": query,
+            "generated_sql": sql,
+            "execution_time_ms": int(execution_time_ms),
+            "confidence_score": round(confidence, 2),
+            "tenant_id": tenant_id,
+            "database_type": settings.DATABASE_TYPE,
+            "executed": False,  # Will be updated if/when query is executed
+            "row_count": None,
+            "error_message": None,
+            "user_feedback": None
         }
         
-        # Insert directly to ensure it doesn't get used for training
+        # Insert into dedicated query history table
         await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: supabase.table("vanna_embeddings").insert(history_record).execute()
+            lambda: supabase.table(table_name).insert(history_record).execute()
         )
         
-        logger.debug(f"Stored query history: {query[:50]}... (confidence: {confidence})")
+        logger.debug(f"Stored query history in {table_name}: {query[:50]}... (confidence: {confidence})")
         
     except Exception as e:
         logger.warning(f"Failed to store query history: {e}")
