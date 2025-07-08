@@ -9,7 +9,7 @@ from google.cloud import bigquery
 import pyodbc
 from src.config.vanna_config import get_vanna
 from src.config.settings import settings
-from src.tools.vanna_train import vanna_train
+# Direct DDL training is done via Vanna instance, not vanna_train tool
 from src.tools.vanna_remove_training import vanna_remove_training
 from src.tools.vanna_get_training_data import vanna_get_training_data
 
@@ -248,18 +248,30 @@ async def _handle_bigquery_batch_ddl(
                     "ddl_preview": ddl[:200] + "..." if len(ddl) > 200 else ddl
                 })
             else:
-                # Train with the DDL
-                train_result = await vanna_train(
-                    training_type="ddl",
-                    content=ddl,
-                    tenant_id=tenant_id,
-                    metadata={
-                        "source": "batch_train_ddl",
+                # Train DDL directly with Vanna instance
+                vn = get_vanna()
+                metadata = {
+                    "source": "batch_train_ddl",
+                    "dataset": dataset_name,
+                    "row_count": row_count,
+                    "generated_at": datetime.now().isoformat(),
+                    "normalized_schema": {
                         "dataset": dataset_name,
-                        "row_count": row_count,
-                        "generated_at": datetime.now().isoformat()
+                        "table_name": table_name,
+                        "columns": [{"name": field.name, "type": field.field_type} for field in table_obj.schema]
                     }
+                }
+                
+                success = vn.train(
+                    ddl=ddl,
+                    tenant_id=tenant_id,
+                    metadata=metadata
                 )
+                
+                train_result = {
+                    "success": success,
+                    "training_id": f"ddl_{table_name}_{datetime.now().timestamp()}" if success else None
+                }
                 
                 if train_result.get("success"):
                     tables_trained.append({
@@ -416,19 +428,42 @@ async def _handle_mssql_batch_ddl(
                         "ddl_preview": ddl[:200] + "..." if len(ddl) > 200 else ddl
                     })
                 else:
-                    # Train with the DDL
-                    train_result = await vanna_train(
-                        training_type="ddl",
-                        content=ddl,
-                        tenant_id=tenant_id,
-                        metadata={
-                            "source": "batch_train_ddl",
+                    # Train DDL directly with Vanna instance
+                    vn = get_vanna()
+                    
+                    # Get column info for metadata
+                    cursor.execute(f"""
+                        SELECT COUNT(*) 
+                        FROM INFORMATION_SCHEMA.COLUMNS 
+                        WHERE TABLE_SCHEMA = '{schema}' 
+                        AND TABLE_NAME = '{table_name}'
+                    """)
+                    column_count = cursor.fetchone()[0]
+                    
+                    metadata = {
+                        "source": "batch_train_ddl",
+                        "database": database_name,
+                        "schema": schema,
+                        "row_count": row_count,
+                        "generated_at": datetime.now().isoformat(),
+                        "normalized_schema": {
                             "database": database_name,
                             "schema": schema,
-                            "row_count": row_count,
-                            "generated_at": datetime.now().isoformat()
+                            "table_name": table_name,
+                            "column_count": column_count
                         }
+                    }
+                    
+                    success = vn.train(
+                        ddl=ddl,
+                        tenant_id=tenant_id,
+                        metadata=metadata
                     )
+                    
+                    train_result = {
+                        "success": success,
+                        "training_id": f"ddl_{table_name}_{datetime.now().timestamp()}" if success else None
+                    }
                     
                     if train_result.get("success"):
                         tables_trained.append({
