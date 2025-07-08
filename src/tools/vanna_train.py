@@ -11,12 +11,17 @@ from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-# Conditional import for BigQuery
+# Conditional imports based on database type
 if settings.DATABASE_TYPE == "bigquery":
     try:
         from google.cloud import bigquery
     except ImportError:
         logger.warning("BigQuery library not available")
+elif settings.DATABASE_TYPE == "mssql":
+    try:
+        import pyodbc
+    except ImportError:
+        logger.warning("pyodbc library not available for MS SQL")
 
 async def vanna_train(
     training_type: str,
@@ -319,14 +324,68 @@ async def _validate_sql_training(sql: str, question: str) -> Dict[str, Any]:
                         "bytes_processed": query_job.total_bytes_processed
                     }
                 elif settings.DATABASE_TYPE == "mssql":
-                    # For MS SQL, we can't easily do dry-run validation in training
-                    # This would require pyodbc connection which is not ideal for validation
-                    logger.info("Skipping SQL validation for MS SQL - will validate at execution time")
-                    return {
-                        "valid": True,
-                        "query_validated": False,
-                        "note": "SQL validation skipped for MS SQL"
-                    }
+                    # MS SQL validation using pyodbc
+                    import pyodbc
+                    
+                    # Add TOP 1 for validation
+                    test_sql = sql
+                    if 'TOP' not in sql_upper:
+                        test_sql = re.sub(
+                            r'(SELECT)(\s+)', 
+                            'SELECT TOP 1 ', 
+                            sql, 
+                            count=1, 
+                            flags=re.IGNORECASE
+                        )
+                    
+                    # Get connection string
+                    conn_str = settings.get_mssql_connection_string()
+                    if not conn_str:
+                        return {
+                            "valid": False,
+                            "error": "MS SQL connection not configured",
+                            "suggestions": ["Configure MS SQL connection settings"]
+                        }
+                    
+                    # Validate with MS SQL
+                    conn = None
+                    cursor = None
+                    try:
+                        conn = pyodbc.connect(conn_str)
+                        cursor = conn.cursor()
+                        
+                        # Execute test query
+                        cursor.execute(test_sql)
+                        
+                        # Get result count
+                        rows = cursor.fetchall()
+                        row_count = len(rows)
+                        
+                        if row_count == 0:
+                            return {
+                                "valid": True,
+                                "warning": "Query returned no results",
+                                "suggestions": ["Verify the query returns data", "Check date ranges and filters"]
+                            }
+                        
+                        return {
+                            "valid": True,
+                            "query_validated": True,
+                            "row_count": row_count,
+                            "database_type": "mssql"
+                        }
+                        
+                    except pyodbc.Error as e:
+                        return {
+                            "valid": False,
+                            "error": f"MS SQL validation failed: {str(e)}",
+                            "suggestions": ["Check table and column names", "Verify SQL syntax for MS SQL Server"]
+                        }
+                    finally:
+                        if cursor:
+                            cursor.close()
+                        if conn:
+                            conn.close()
                 else:
                     return {
                         "valid": True,
@@ -337,7 +396,7 @@ async def _validate_sql_training(sql: str, question: str) -> Dict[str, Any]:
                 return {
                     "valid": False,
                     "error": f"Query validation failed: {str(e)}",
-                    "suggestions": ["Check table and column names", "Verify SQL syntax for BigQuery"]
+                    "suggestions": ["Check table and column names", f"Verify SQL syntax for {settings.DATABASE_TYPE}"]
                 }
         
         return {"valid": True}

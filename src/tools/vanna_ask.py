@@ -23,7 +23,7 @@ async def vanna_ask(
     Convert natural language query to SQL using Vanna AI.
     
     This is the core functionality that analyzes natural language questions
-    and generates appropriate SQL queries for BigQuery.
+    and generates appropriate SQL queries for BigQuery or MS SQL Server.
     
     Args:
         query (str): Natural language question about the data
@@ -53,7 +53,7 @@ async def vanna_ask(
         - sql (str): Generated SQL query
         - explanation (str): Plain English explanation of what the SQL does
         - confidence (float): Confidence score (0-1)
-        - database (str): Target database (always 'bigquery' for now)
+        - database (str): Target database type (configured via DATABASE_TYPE)
         - tables_referenced (list): Tables used in the query
         - execution_time_ms (float): Time taken to generate SQL
         - training_data_used (dict): What training data was used
@@ -469,9 +469,17 @@ def _store_query_history_sync(vanna_instance, query: str, sql: str, execution_ti
 
 
 # For FastMCP registration
+# Dynamic description based on configured database type
+database_name = {
+    "bigquery": "BigQuery",
+    "mssql": "MS SQL Server",
+    "postgres": "PostgreSQL",
+    "mysql": "MySQL"
+}.get(settings.DATABASE_TYPE, settings.DATABASE_TYPE)
+
 tool_definition = {
     "name": "vanna_ask",
-    "description": "Convert natural language questions to SQL queries for BigQuery data analysis",
+    "description": f"Convert natural language questions to SQL queries for {database_name} data analysis",
     "input_schema": {
         "type": "object",
         "properties": {
