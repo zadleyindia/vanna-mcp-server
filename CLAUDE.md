@@ -1,5 +1,15 @@
 # Vanna MCP Server - Development Context
 
+## Previous Session Context
+
+### Latest Updates (2025-01-08)
+- ✅ Created vanna_batch_train_ddl tool for automated DDL extraction
+- ✅ Added full MS SQL Server support (12/13 tools now support both databases)
+- ✅ Implemented SQL dialect translation (BigQuery ↔ MS SQL)
+- ✅ Updated documentation with complete 13-tool list
+- ✅ Committed all changes (commit: 40c5c3c)
+- Ready to test all 13 tools with both BigQuery and MS SQL configurations
+
 ## Project Overview
 Production-ready MCP server for natural language to SQL conversion with enterprise multi-tenant support.
 
@@ -17,14 +27,20 @@ Production-ready MCP server for natural language to SQL conversion with enterpri
 1. **MCP Server** (`server.py`) - FastMCP-based server handling client requests
 2. **Vanna Integration** (`src/config/production_vanna.py`) - Custom Vanna implementation with multi-tenant support
 3. **Vector Store** (`src/vanna_schema/pgvector_with_schema.py`) - PostgreSQL pgvector for similarity search
-4. **Tools** (`src/tools/`) - Complete MCP tool suite:
+4. **Tools** (`src/tools/`) - Complete MCP tool suite (13 tools):
    - `vanna_ask` - Natural language to SQL conversion
-   - `vanna_train` - Add training data with security validation
+   - `vanna_train` - Add training data (documentation/SQL only)
+   - `vanna_batch_train_ddl` - Auto-generate DDL from database
    - `vanna_suggest_questions` - Generate suggested queries
    - `vanna_list_tenants` - Multi-tenant management
    - `vanna_get_query_history` - Query analytics and history
    - `vanna_explain` - SQL explanation in plain English
-   - `vanna_execute` - SQL execution with visualization and export
+   - `vanna_execute` - SQL execution with export (CSV/JSON/Excel)
+   - `vanna_get_schemas` - View database structure
+   - `vanna_get_training_data` - Browse training data
+   - `vanna_remove_training` - Remove incorrect training
+   - `vanna_generate_followup` - Generate follow-up questions
+   - `vanna_catalog_sync` - Sync BigQuery Data Catalog
 
 ### Multi-Tenant Implementation
 - Metadata-based filtering using PostgreSQL JSONB
@@ -32,7 +48,7 @@ Production-ready MCP server for natural language to SQL conversion with enterpri
 - Cross-tenant query blocking with `STRICT_TENANT_ISOLATION`
 - Shared knowledge support with `is_shared` flag
 
-## Recent Improvements (2025-01-06)
+## Recent Improvements (2025-01-06 to 2025-01-08)
 - Fixed table name extraction to handle punctuation
 - Enhanced cross-tenant detection with multiple validation layers
 - Added pre-query blocking for explicit cross-tenant references
@@ -45,6 +61,10 @@ Production-ready MCP server for natural language to SQL conversion with enterpri
 - **BigQuery DDL Testing**: Successfully tested with 3 e-commerce tables
 - **Phase 3 Extended Features**: Completed vanna_explain and vanna_execute tools
 - **Export Functionality**: Added CSV/JSON/Excel export with comprehensive data formatting
+- **MS SQL Support**: Added full MS SQL Server support across 12/13 tools
+- **Automated DDL Training**: Created vanna_batch_train_ddl tool with row count filtering
+- **SQL Dialect Translation**: Implemented bidirectional BigQuery ↔ MS SQL translation
+- **Data Catalog Integration**: Added vanna_catalog_sync for BigQuery metadata
 
 ## Testing Status
 ✅ Multi-tenant isolation: 100% working
@@ -56,6 +76,9 @@ Production-ready MCP server for natural language to SQL conversion with enterpri
 ✅ BigQuery features: STRUCT types, partitioning, clustering support
 ✅ Phase 3 Extended Features: SQL explanation and execution tools
 ✅ Export functionality: CSV/JSON/Excel with data formatting
+✅ MS SQL Support: 12/13 tools support both BigQuery and MS SQL
+✅ Automated DDL Training: Row count filtering and metadata enrichment
+✅ SQL Dialect Translation: Automatic conversion between databases
 
 ## Configuration
 
@@ -65,8 +88,15 @@ OPENAI_API_KEY=your_key
 SUPABASE_URL=https://project.supabase.co
 SUPABASE_KEY=anon_key
 SUPABASE_DB_PASSWORD=db_password  # PostgreSQL password, not anon key!
-DATABASE_TYPE=bigquery
+DATABASE_TYPE=bigquery  # Options: bigquery, mssql
 BIGQUERY_PROJECT=project_id
+
+# MS SQL Configuration (if using MS SQL)
+MSSQL_SERVER=your_server
+MSSQL_DATABASE=your_database
+MSSQL_USERNAME=your_username
+MSSQL_PASSWORD=your_password
+MSSQL_DRIVER=ODBC Driver 17 for SQL Server
 ```
 
 ### Multi-Tenant Settings
@@ -119,11 +149,11 @@ python scripts/setup_database.py
 - Supports both legacy data (without tenant_id) and strict filtering
 
 ### Training Data
-- **DDL**: Table definitions with enhanced security validation
-  - Raw CREATE TABLE statements are processed and filtered
-  - Only normalized schema metadata is stored (no executable DDL)
-  - Dangerous keywords (DROP, DELETE, ALTER, etc.) are blocked
-  - Schema information extracted: table names, columns, data types, partitioning
+- **DDL**: Automated extraction via `vanna_batch_train_ddl`
+  - Extracts DDL from tables with data (min_row_count filtering)
+  - Enriches with row count metadata
+  - Supports table pattern matching (e.g., "sales_*")
+  - Manual DDL input removed for security
 - **Documentation**: Business rules and context
 - **SQL**: Question-answer pairs with comprehensive validation
   - Only SELECT statements allowed for training
