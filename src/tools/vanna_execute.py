@@ -11,6 +11,7 @@ import asyncio
 from datetime import datetime, date
 from decimal import Decimal
 from google.cloud import bigquery
+import pyodbc
 from src.config.vanna_config import get_vanna
 from src.config.settings import settings
 
@@ -198,14 +199,9 @@ async def vanna_execute(
             except ImportError as e:
                 logger.warning(f"Could not import cross-tenant validation: {e}")
         
-        # Database type validation
+        # Database type validation - removed blocking check
         database_type = settings.DATABASE_TYPE
-        if database_type.lower() != "bigquery":
-            return {
-                "success": False,
-                "error": f"SQL execution only supported for BigQuery, current database: {database_type}",
-                "suggestions": ["Configure DATABASE_TYPE=bigquery for execution support"]
-            }
+        logger.info(f"Executing SQL on database type: {database_type}")
         
         # Execute query
         start_time = datetime.now()
@@ -333,15 +329,49 @@ def _is_safe_sql(sql: str) -> bool:
     return True
 
 def _apply_limit(sql: str, limit: int) -> str:
-    """Apply LIMIT clause to SQL if not already present"""
+    """Apply LIMIT/TOP clause to SQL if not already present"""
     sql_upper = sql.upper()
+    database_type = settings.DATABASE_TYPE
     
-    if "LIMIT" not in sql_upper:
-        return f"{sql.rstrip(';')} LIMIT {limit}"
-    
-    return sql
+    if database_type == "mssql":
+        # MS SQL uses TOP syntax
+        if "TOP" not in sql_upper and "LIMIT" not in sql_upper:
+            # Insert TOP after SELECT
+            sql_parts = sql.split()
+            for i, part in enumerate(sql_parts):
+                if part.upper() == "SELECT":
+                    sql_parts.insert(i + 1, f"TOP {limit}")
+                    return " ".join(sql_parts)
+        return sql
+    else:
+        # BigQuery uses LIMIT syntax
+        if "LIMIT" not in sql_upper:
+            return f"{sql.rstrip(';')} LIMIT {limit}"
+        return sql
 
 async def _execute_query(sql: str) -> Dict[str, Any]:
+    """Execute SQL query using appropriate database client"""
+    try:
+        database_type = settings.DATABASE_TYPE
+        
+        if database_type == "bigquery":
+            return await _execute_bigquery(sql)
+        elif database_type == "mssql":
+            return await _execute_mssql(sql)
+        else:
+            return {
+                "success": False,
+                "error": f"Unsupported database type: {database_type}",
+                "supported_types": ["bigquery", "mssql"]
+            }
+    except Exception as e:
+        logger.error(f"Query execution failed: {str(e)}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+async def _execute_bigquery(sql: str) -> Dict[str, Any]:
     """Execute SQL query using BigQuery client"""
     try:
         # Use BigQuery client for execution
@@ -388,13 +418,73 @@ async def _execute_query(sql: str) -> Dict[str, Any]:
         }
         
     except Exception as e:
-        logger.error(f"Query execution failed: {str(e)}")
+        logger.error(f"BigQuery execution failed: {str(e)}")
         return {
             "success": False,
             "error": str(e),
             "data": [],
             "columns": []
         }
+
+async def _execute_mssql(sql: str) -> Dict[str, Any]:
+    """Execute SQL query using MS SQL client"""
+    conn = None
+    cursor = None
+    try:
+        # Get connection string
+        conn_str = settings.get_mssql_connection_string()
+        
+        # Connect to MS SQL
+        conn = pyodbc.connect(conn_str)
+        cursor = conn.cursor()
+        
+        # Execute query
+        cursor.execute(sql)
+        
+        # Get column information
+        columns = []
+        if cursor.description:
+            columns = [
+                {
+                    "name": column[0],
+                    "type": str(column[1].__name__) if hasattr(column[1], '__name__') else 'unknown',
+                    "mode": "NULLABLE"  # MS SQL doesn't provide this info easily
+                }
+                for column in cursor.description
+            ]
+        
+        # Fetch all results
+        data = []
+        rows = cursor.fetchall()
+        
+        for row in rows:
+            row_dict = {}
+            for i, value in enumerate(row):
+                column_name = columns[i]["name"] if i < len(columns) else f"column_{i}"
+                row_dict[column_name] = _serialize_value(value)
+            data.append(row_dict)
+        
+        return {
+            "success": True,
+            "data": data,
+            "columns": columns,
+            "total_rows": len(data),
+            "bytes_processed": None  # MS SQL doesn't provide this
+        }
+        
+    except Exception as e:
+        logger.error(f"MS SQL execution failed: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "data": [],
+            "columns": []
+        }
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 def _serialize_value(value) -> Any:
     """Convert BigQuery values to JSON-serializable format"""

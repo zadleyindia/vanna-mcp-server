@@ -168,6 +168,16 @@ async def vanna_ask(
         # Calculate execution time
         execution_time_ms = (time.time() - start_time) * 1000
         
+        # Apply SQL dialect translation if needed
+        if sql and settings.DATABASE_TYPE == "mssql":
+            try:
+                from src.utils.sql_dialect import SQLDialectTranslator
+                # Vanna generates BigQuery syntax by default, translate to MS SQL
+                sql = SQLDialectTranslator.translate(sql, "bigquery", "mssql")
+                logger.info("Translated SQL to MS SQL dialect")
+            except Exception as e:
+                logger.warning(f"Failed to translate SQL dialect: {e}")
+        
         # Extract table references from SQL
         tables_referenced = _extract_tables_from_sql(sql)
         logger.info(f"Tables referenced in SQL: {tables_referenced}")

@@ -7,7 +7,7 @@ A production-ready Model Context Protocol (MCP) server that provides natural lan
 - **Natural Language to SQL**: Convert plain English questions to optimized SQL queries
 - **Query History & Analytics**: Track all SQL queries with performance metrics and confidence scores
 - **Multi-Tenant Isolation**: Enterprise-grade tenant isolation with strict security boundaries
-- **Multi-Database Support**: Works with BigQuery, PostgreSQL, MySQL, and MS SQL Server
+- **Multi-Database Support**: Full support for BigQuery and MS SQL Server with automatic SQL dialect translation
 - **Shared Knowledge Base**: Share common business logic across tenants while maintaining data isolation
 - **MCP Integration**: Seamlessly integrates with Claude Desktop and other MCP-compatible clients
 - **Production Ready**: Battle-tested with comprehensive error handling and logging
@@ -107,40 +107,23 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
 
 ### Available Tools
 
-The server provides four main tools:
+The server provides 13 comprehensive tools for SQL generation and management:
 
-#### 1. `vanna_ask` - Convert Natural Language to SQL
+#### Core Tools
+
+##### 1. `vanna_ask` - Convert Natural Language to SQL
 ```python
 # Basic usage
 result = vanna_ask(query="Show me total sales last month")
-
-# With tenant context
-result = vanna_ask(
-    query="Show me total sales last month",
-    tenant_id="tenant_abc"
-)
-
-# Response includes:
-# - sql: Generated SQL query
-# - confidence: Confidence score (0-1)
-# - explanation: Plain English explanation
-# - tables_referenced: List of tables used
+# Response includes SQL with proper dialect (BigQuery/MS SQL)
 ```
 
-#### 2. `vanna_train` - Train the Model
+##### 2. `vanna_train` - Train with Documentation or SQL Examples
 ```python
-# Train with DDL
-vanna_train(
-    training_type="ddl",
-    content="CREATE TABLE sales (id INT, amount DECIMAL)",
-    tenant_id="tenant_abc"
-)
-
 # Train with documentation
 vanna_train(
     training_type="documentation",
-    content="Sales table contains all transactions",
-    is_shared=True  # Available to all tenants
+    content="Sales table contains all customer transactions"
 )
 
 # Train with SQL examples
@@ -151,55 +134,83 @@ vanna_train(
 )
 ```
 
-#### 3. `vanna_suggest_questions` - Get Question Suggestions
+##### 3. `vanna_batch_train_ddl` - Auto-Generate DDL from Database
 ```python
-suggestions = vanna_suggest_questions(
-    context="sales",
-    limit=5
+# Extract DDL for all tables with data
+vanna_batch_train_ddl(
+    dataset_id="sales_data",  # BigQuery dataset or MS SQL database
+    min_row_count=100,        # Only tables with 100+ rows
+    table_pattern="fact_*"    # Optional: filter tables
 )
 ```
 
-#### 4. `vanna_list_tenants` - List Tenant Configuration
+#### Query Tools
+
+##### 4. `vanna_execute` - Execute SQL Queries
 ```python
-tenants = vanna_list_tenants()
-# Returns allowed tenants and configuration
+# Execute query with results
+result = vanna_execute(
+    sql="SELECT * FROM sales",
+    limit=1000,
+    export_format="csv"  # Optional: csv, json, excel
+)
 ```
 
-#### 5. `vanna_get_query_history` - View Query History & Analytics
+##### 5. `vanna_explain` - Explain SQL in Plain English
 ```python
-# Get recent queries with analytics
-history = vanna_get_query_history(
-    tenant_id="tenant_abc",  # Optional: filter by tenant
-    limit=10,                # Number of queries to return
-    include_analytics=True   # Include performance analytics
+explanation = vanna_explain(
+    sql="SELECT COUNT(*) FROM orders WHERE status = 'pending'",
+    include_performance_tips=True
 )
+```
 
-# Returns:
-# {
-#   "queries": [
-#     {
-#       "id": "uuid",
-#       "question": "Show me total sales for this month",
-#       "sql": "SELECT SUM(sales) FROM...",
-#       "confidence_score": 0.85,
-#       "execution_time_ms": 1250,
-#       "tenant_id": "tenant_abc",
-#       "database_type": "bigquery",
-#       "created_at": "2025-07-06T11:27:24Z"
-#     }
-#   ],
-#   "analytics": {
-#     "total_queries": 50,
-#     "average_execution_time_ms": 1200,
-#     "average_confidence_score": 0.82,
-#     "queries_by_confidence": {
-#       "high_confidence": 35,
-#       "medium_confidence": 12,
-#       "low_confidence": 3
-#     },
-#     "success_rate": 0.96
-#   }
-# }
+#### Discovery Tools
+
+##### 6. `vanna_suggest_questions` - Get Question Suggestions
+```python
+suggestions = vanna_suggest_questions(context="sales analytics", limit=5)
+```
+
+##### 7. `vanna_get_schemas` - View Database Structure
+```python
+schemas = vanna_get_schemas(table_filter="sales_*", include_metadata=True)
+```
+
+##### 8. `vanna_generate_followup` - Generate Follow-up Questions
+```python
+followups = vanna_generate_followup(
+    original_question="What were sales last month?",
+    sql_generated="SELECT SUM(amount) FROM sales WHERE..."
+)
+```
+
+#### Management Tools
+
+##### 9. `vanna_get_training_data` - Browse Training Data
+```python
+training_data = vanna_get_training_data(training_type="sql", search_query="sales")
+```
+
+##### 10. `vanna_remove_training` - Remove Training Data
+```python
+result = vanna_remove_training(training_ids=["id1", "id2"], reason="Outdated")
+```
+
+##### 11. `vanna_get_query_history` - View Query History
+```python
+history = vanna_get_query_history(limit=10, include_analytics=True)
+```
+
+#### Administrative Tools
+
+##### 12. `vanna_list_tenants` - Multi-Tenant Configuration
+```python
+config = vanna_list_tenants()
+```
+
+##### 13. `vanna_catalog_sync` - Sync Data Catalog (BigQuery)
+```python
+result = vanna_catalog_sync(mode="full", dataset_filter="SQL_*")
 ```
 
 ## 🏢 Multi-Tenant Configuration

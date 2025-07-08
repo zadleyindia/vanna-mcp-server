@@ -68,6 +68,17 @@ class Settings:
     ACCESS_CONTROL_MODE: str = get_config("ACCESS_CONTROL_MODE", "whitelist")  # whitelist or blacklist
     ACCESS_CONTROL_DATASETS: str = get_config("ACCESS_CONTROL_DATASETS", "")  # comma-separated list
     
+    # Data Catalog Integration
+    CATALOG_ENABLED: bool = get_config("CATALOG_ENABLED", "false").lower() == "true"
+    CATALOG_PROJECT: str = get_config("CATALOG_PROJECT", "bigquerylascoot")  # BigQuery project with catalog
+    CATALOG_DATASET: str = get_config("CATALOG_DATASET", "metadata_data_dictionary")  # Catalog dataset
+    CATALOG_SYNC_MODE: str = get_config("CATALOG_SYNC_MODE", "manual")  # manual or auto
+    CATALOG_CHUNK_SIZE: int = int(get_config("CATALOG_CHUNK_SIZE", "20"))  # Columns per chunk
+    CATALOG_MAX_TOKENS: int = int(get_config("CATALOG_MAX_TOKENS", "1500"))  # Max tokens per chunk
+    CATALOG_INCLUDE_VIEWS: bool = get_config("CATALOG_INCLUDE_VIEWS", "true").lower() == "true"
+    CATALOG_INCLUDE_COLUMN_STATS: bool = get_config("CATALOG_INCLUDE_COLUMN_STATS", "true").lower() == "true"
+    CATALOG_DATASET_FILTER: Optional[str] = get_config("CATALOG_DATASET_FILTER")  # Filter specific datasets
+    
     # Query Validation
     MANDATORY_QUERY_VALIDATION: bool = get_config("MANDATORY_QUERY_VALIDATION", "true").lower() == "true"
     MAX_QUERY_RESULTS: int = int(get_config("MAX_QUERY_RESULTS", "10000"))
@@ -211,6 +222,15 @@ class Settings:
                 warnings.append("Legacy data (records without tenant_id) will be included in results")
             else:
                 logger.info("Strict tenant isolation - only records with matching tenant_id will be returned")
+        
+        # Catalog validation
+        if cls.CATALOG_ENABLED:
+            if not cls.CATALOG_PROJECT:
+                errors.append("CATALOG_PROJECT is not set but CATALOG_ENABLED is true")
+            if not cls.CATALOG_DATASET:
+                errors.append("CATALOG_DATASET is not set but CATALOG_ENABLED is true")
+            if cls.DATABASE_TYPE != "bigquery":
+                warnings.append(f"Catalog integration is enabled but DATABASE_TYPE is {cls.DATABASE_TYPE} (catalog is in BigQuery)")
         
         if cls.DEBUG:
             warnings.append("DEBUG mode is enabled")

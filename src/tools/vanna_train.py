@@ -8,9 +8,15 @@ import re
 from datetime import datetime
 from src.config.vanna_config import get_vanna
 from src.config.settings import settings
-from google.cloud import bigquery
 
 logger = logging.getLogger(__name__)
+
+# Conditional import for BigQuery
+if settings.DATABASE_TYPE == "bigquery":
+    try:
+        from google.cloud import bigquery
+    except ImportError:
+        logger.warning("BigQuery library not available")
 
 async def vanna_train(
     training_type: str,
@@ -24,16 +30,16 @@ async def vanna_train(
     """
     Train Vanna with new data to improve SQL generation.
     
-    This tool allows adding training data in three forms:
-    1. DDL - Table definitions and schema
-    2. Documentation - Business context and descriptions
-    3. SQL - Question-SQL pairs for pattern learning
+    This tool allows adding training data in two forms:
+    1. Documentation - Business context and descriptions
+    2. SQL - Question-SQL pairs for pattern learning
+    
+    Note: For DDL/schema training, use vanna_batch_train_ddl tool instead.
     
     Args:
-        training_type (str): Type of training data - 'ddl', 'documentation', or 'sql'
+        training_type (str): Type of training data - 'documentation' or 'sql'
         
         content (str): The training content
-            - For 'ddl': CREATE TABLE statement
             - For 'documentation': Text description of tables/business logic
             - For 'sql': The SQL query
             
@@ -53,7 +59,6 @@ async def vanna_train(
             
         validate (bool): Whether to validate before training
             - For SQL: Check syntax and run dry query
-            - For DDL: Verify table exists
             Default: True
     
     Returns:
@@ -65,12 +70,6 @@ async def vanna_train(
         - suggestions (list): Related training suggestions
         
     Example Usage:
-        # Train with DDL
-        vanna_train(
-            training_type="ddl",
-            content="CREATE TABLE sales (id INT, amount DECIMAL, date DATE)"
-        )
-        
         # Train with documentation
         vanna_train(
             training_type="documentation", 
@@ -83,16 +82,23 @@ async def vanna_train(
             question="What were total sales last month?",
             content="SELECT SUM(totalvalue) FROM sales WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH)"
         )
+        
+        # For DDL/schema training, use vanna_batch_train_ddl:
+        # vanna_batch_train_ddl(dataset_id="sales_data", min_row_count=1)
     """
     try:
         vn = get_vanna()
         
         # Validate inputs
-        if training_type not in ['ddl', 'documentation', 'sql']:
+        if training_type not in ['documentation', 'sql']:
             return {
                 "success": False,
-                "message": f"Invalid training_type: {training_type}. Must be 'ddl', 'documentation', or 'sql'",
-                "suggestions": ["Use 'ddl' for table definitions", "Use 'documentation' for descriptions", "Use 'sql' for query examples"]
+                "message": f"Invalid training_type: {training_type}. Must be 'documentation' or 'sql'",
+                "suggestions": [
+                    "Use 'documentation' for business context and descriptions",
+                    "Use 'sql' for query examples with questions",
+                    "For DDL/schema training, use vanna_batch_train_ddl tool instead"
+                ]
             }
         
         if training_type == 'sql' and not question:
@@ -150,23 +156,7 @@ async def vanna_train(
         enhanced_metadata['training_source'] = 'mcp_tool'
         enhanced_metadata['training_type'] = training_type
         
-        if training_type == 'ddl':
-            # Extract schema metadata for secure training
-            schema_info = validation_results.get('schema_metadata', {})
-            
-            # Create normalized schema documentation instead of raw DDL
-            normalized_content = _create_normalized_schema_doc(schema_info, content)
-            
-            # Store as documentation rather than raw DDL for security
-            success = vn.train(
-                documentation=normalized_content,
-                tenant_id=tenant_id,
-                is_shared=is_shared,
-                metadata=enhanced_metadata
-            )
-            training_id = f"ddl_{datetime.now().timestamp()}"
-            
-        elif training_type == 'documentation':
+        if training_type == 'documentation':
             success = vn.train(
                 documentation=content,
                 tenant_id=tenant_id,
@@ -245,10 +235,6 @@ async def _validate_training_content(
         # Validate SQL syntax and safety
         return await _validate_sql_training(content, question)
     
-    elif training_type == 'ddl':
-        # Validate DDL format
-        return _validate_ddl_training(content)
-    
     elif training_type == 'documentation':
         # Basic validation for documentation
         return _validate_documentation_training(content)
@@ -304,32 +290,48 @@ async def _validate_sql_training(sql: str, question: str) -> Dict[str, Any]:
         # Dry run with LIMIT 1 if configured
         if settings.MANDATORY_QUERY_VALIDATION:
             try:
-                # Add LIMIT 1 for validation
-                test_sql = sql
-                if 'LIMIT' not in sql_upper:
-                    test_sql = f"{sql} LIMIT 1"
-                
-                # Create BigQuery client and run query
-                client = bigquery.Client(project=settings.BIGQUERY_PROJECT)
-                query_job = client.query(test_sql)
-                
-                # Wait for query to complete
-                results = query_job.result()
-                row_count = results.total_rows
-                
-                if row_count == 0:
+                # Database-specific validation
+                if settings.DATABASE_TYPE == "bigquery":
+                    # Add LIMIT 1 for validation
+                    test_sql = sql
+                    if 'LIMIT' not in sql_upper:
+                        test_sql = f"{sql} LIMIT 1"
+                    
+                    # Create BigQuery client and run query
+                    client = bigquery.Client(project=settings.BIGQUERY_PROJECT)
+                    query_job = client.query(test_sql)
+                    
+                    # Wait for query to complete
+                    results = query_job.result()
+                    row_count = results.total_rows
+                    
+                    if row_count == 0:
+                        return {
+                            "valid": True,
+                            "warning": "Query returned no results",
+                            "suggestions": ["Verify the query returns data", "Check date ranges and filters"]
+                        }
+                    
                     return {
                         "valid": True,
-                        "warning": "Query returned no results",
-                        "suggestions": ["Verify the query returns data", "Check date ranges and filters"]
+                        "query_validated": True,
+                        "execution_time_ms": query_job.slot_millis,
+                        "bytes_processed": query_job.total_bytes_processed
                     }
-                
-                return {
-                    "valid": True,
-                    "query_validated": True,
-                    "execution_time_ms": query_job.slot_millis,
-                    "bytes_processed": query_job.total_bytes_processed
-                }
+                elif settings.DATABASE_TYPE == "mssql":
+                    # For MS SQL, we can't easily do dry-run validation in training
+                    # This would require pyodbc connection which is not ideal for validation
+                    logger.info("Skipping SQL validation for MS SQL - will validate at execution time")
+                    return {
+                        "valid": True,
+                        "query_validated": False,
+                        "note": "SQL validation skipped for MS SQL"
+                    }
+                else:
+                    return {
+                        "valid": True,
+                        "warning": f"SQL validation not implemented for {settings.DATABASE_TYPE}"
+                    }
                 
             except Exception as e:
                 return {
@@ -346,197 +348,6 @@ async def _validate_sql_training(sql: str, question: str) -> Dict[str, Any]:
             "error": f"Validation error: {str(e)}",
             "suggestions": ["Check SQL syntax"]
         }
-
-def _validate_ddl_training(ddl: str) -> Dict[str, Any]:
-    """Validate DDL format and extract only schema metadata"""
-    ddl_upper = ddl.strip().upper()
-    
-    if not ddl_upper.startswith('CREATE TABLE'):
-        return {
-            "valid": False,
-            "error": "DDL must be a CREATE TABLE statement",
-            "suggestions": ["Start with 'CREATE TABLE'", "Include column definitions"]
-        }
-    
-    # Check for basic structure
-    if '(' not in ddl or ')' not in ddl:
-        return {
-            "valid": False,
-            "error": "DDL must include column definitions in parentheses",
-            "suggestions": ["Format: CREATE TABLE table_name (column definitions)"]
-        }
-    
-    # Security check: Block dangerous DDL commands
-    dangerous_ddl_keywords = [
-        'DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE', 
-        'GRANT', 'REVOKE', 'EXECUTE', 'CALL', 'MERGE'
-    ]
-    
-    # Allow CREATE TABLE but block other DDL commands
-    for keyword in dangerous_ddl_keywords:
-        if keyword in ddl_upper and keyword != 'CREATE':
-            return {
-                "valid": False,
-                "error": f"DDL contains forbidden keyword: {keyword}",
-                "suggestions": ["Use only CREATE TABLE statements for schema definition"]
-            }
-    
-    # Extract and validate schema metadata
-    try:
-        schema_info = _extract_schema_metadata(ddl)
-        if not schema_info:
-            return {
-                "valid": False,
-                "error": "Could not extract valid schema information",
-                "suggestions": ["Ensure proper CREATE TABLE syntax with column definitions"]
-            }
-        
-        return {
-            "valid": True,
-            "schema_metadata": schema_info,
-            "security_validated": True
-        }
-        
-    except Exception as e:
-        return {
-            "valid": False,
-            "error": f"Schema validation failed: {str(e)}",
-            "suggestions": ["Check DDL syntax and format"]
-        }
-
-def _extract_schema_metadata(ddl: str) -> Dict[str, Any]:
-    """Extract only schema metadata from DDL, filtering out dangerous commands"""
-    import re
-    
-    try:
-        # Extract table name (supports both backticks and regular names)
-        table_match = re.search(r'CREATE TABLE\s+(?:`([^`]+)`|(\w+(?:\.\w+)*(?:\.\w+)*))', ddl, re.IGNORECASE)
-        if not table_match:
-            return {}
-        
-        table_name = table_match.group(1) or table_match.group(2)
-        
-        # Extract column definitions (between first ( and last ))
-        column_match = re.search(r'\((.+)\)(?:\s*PARTITION|\s*CLUSTER|\s*OPTIONS|\s*$)', ddl, re.DOTALL | re.IGNORECASE)
-        if not column_match:
-            return {}
-        
-        columns_text = column_match.group(1)
-        
-        # Parse individual columns
-        columns = []
-        # Split by commas, but handle nested STRUCT types
-        column_parts = _smart_split_columns(columns_text)
-        
-        for col_def in column_parts:
-            col_def = col_def.strip()
-            if not col_def:
-                continue
-                
-            # Extract column name and type
-            col_match = re.match(r'(\w+)\s+(.+?)(?:\s+(?:NOT\s+NULL|DEFAULT\s+.+|PRIMARY\s+KEY).*)?$', col_def, re.IGNORECASE)
-            if col_match:
-                col_name = col_match.group(1)
-                col_type = col_match.group(2).strip()
-                
-                # Clean up type (remove constraints)
-                col_type = re.sub(r'\s+(?:NOT\s+NULL|DEFAULT\s+.+|PRIMARY\s+KEY).*', '', col_type, flags=re.IGNORECASE)
-                
-                columns.append({
-                    "name": col_name,
-                    "type": col_type,
-                    "nullable": "NOT NULL" not in col_def.upper()
-                })
-        
-        # Extract partitioning info
-        partition_match = re.search(r'PARTITION BY\s+(.+?)(?:\s*CLUSTER|\s*OPTIONS|\s*$)', ddl, re.IGNORECASE)
-        partition_info = partition_match.group(1).strip() if partition_match else None
-        
-        # Extract clustering info
-        cluster_match = re.search(r'CLUSTER BY\s+(.+?)(?:\s*OPTIONS|\s*$)', ddl, re.IGNORECASE)
-        cluster_info = cluster_match.group(1).strip() if cluster_match else None
-        
-        # Return normalized schema metadata (no executable DDL)
-        return {
-            "table_name": table_name,
-            "columns": columns,
-            "partition_by": partition_info,
-            "cluster_by": cluster_info,
-            "column_count": len(columns),
-            "has_structs": any("STRUCT" in col["type"].upper() for col in columns),
-            "has_partitioning": bool(partition_info),
-            "has_clustering": bool(cluster_info)
-        }
-        
-    except Exception as e:
-        logger.warning(f"Failed to extract schema metadata: {e}")
-        return {}
-
-def _smart_split_columns(columns_text: str) -> list:
-    """Split column definitions by commas, handling nested STRUCT types"""
-    parts = []
-    current_part = ""
-    paren_depth = 0
-    angle_depth = 0
-    
-    for char in columns_text:
-        if char == '(':
-            paren_depth += 1
-        elif char == ')':
-            paren_depth -= 1
-        elif char == '<':
-            angle_depth += 1
-        elif char == '>':
-            angle_depth -= 1
-        elif char == ',' and paren_depth == 0 and angle_depth == 0:
-            parts.append(current_part.strip())
-            current_part = ""
-            continue
-            
-        current_part += char
-    
-    if current_part.strip():
-        parts.append(current_part.strip())
-    
-    return parts
-
-def _create_normalized_schema_doc(schema_info: Dict[str, Any], original_ddl: str) -> str:
-    """Create normalized schema documentation from metadata (no executable DDL)"""
-    if not schema_info:
-        return f"Table schema information extracted from DDL"
-    
-    table_name = schema_info.get('table_name', 'unknown_table')
-    columns = schema_info.get('columns', [])
-    
-    # Create safe documentation format
-    doc_parts = [
-        f"Table: {table_name}",
-        f"Columns ({len(columns)}):"
-    ]
-    
-    # Add column information
-    for col in columns:
-        col_info = f"- {col['name']}: {col['type']}"
-        if not col.get('nullable', True):
-            col_info += " (NOT NULL)"
-        doc_parts.append(col_info)
-    
-    # Add partitioning info if present
-    if schema_info.get('partition_by'):
-        doc_parts.append(f"Partitioned by: {schema_info['partition_by']}")
-    
-    # Add clustering info if present
-    if schema_info.get('cluster_by'):
-        doc_parts.append(f"Clustered by: {schema_info['cluster_by']}")
-    
-    # Add structural metadata
-    if schema_info.get('has_structs'):
-        doc_parts.append("Contains STRUCT data types")
-    
-    # Add a note about the original table structure
-    doc_parts.append(f"This table contains {schema_info.get('column_count', 0)} columns")
-    
-    return "\n".join(doc_parts)
 
 def _validate_documentation_training(doc: str) -> Dict[str, Any]:
     """Validate documentation"""
@@ -564,22 +375,11 @@ def _generate_training_suggestions(
             "Include queries with different aggregations (COUNT, AVG)",
             "Add queries that JOIN with other tables"
         ])
-        
-    elif training_type == 'ddl':
-        # Extract table name and suggest documentation
-        table_match = re.search(r'CREATE TABLE\s+`?([^`\s(]+)', content, re.IGNORECASE)
-        if table_match:
-            table_name = table_match.group(1)
-            suggestions.extend([
-                f"Add documentation explaining what {table_name} contains",
-                f"Add sample queries for {table_name}",
-                f"Document relationships with other tables"
-            ])
             
     elif training_type == 'documentation':
         # Suggest related training
         suggestions.extend([
-            "Add CREATE TABLE statements for mentioned tables",
+            "Use vanna_batch_train_ddl to add table schemas",
             "Include example queries demonstrating the concepts",
             "Document column-level details and data types"
         ])
@@ -606,18 +406,18 @@ def _store_training_history(
 # Tool definition for FastMCP
 tool_definition = {
     "name": "vanna_train",
-    "description": "Add training data (DDL, documentation, or SQL examples) to improve Vanna's SQL generation",
+    "description": "Add training data (documentation or SQL examples) to improve Vanna's SQL generation. For DDL/schema training, use vanna_batch_train_ddl.",
     "input_schema": {
         "type": "object",
         "properties": {
             "training_type": {
                 "type": "string",
-                "enum": ["ddl", "documentation", "sql"],
+                "enum": ["documentation", "sql"],
                 "description": "Type of training data being added"
             },
             "content": {
                 "type": "string",
-                "description": "The training content (DDL statement, documentation text, or SQL query)"
+                "description": "The training content (documentation text or SQL query)"
             },
             "question": {
                 "type": "string",
